@@ -153,12 +153,10 @@ names(f.observaciones)[names(f.observaciones) == "CEDASOCIAD"] <- "CEDULA"
 
 
 # 5. DISPONIBLE -----------------------------------------------------------
-linea <- c("Ordinario", "Fertilizante", "Almacén")
-
 
 ## Valor cupo
 
-### Ordinario
+# Ordinario
 o0.vrCupo <- aggregate(x = select(daportes.DBF, CAPINGRE, CAPANUAL,
                                  DESCPTMO, CAPCAFE, REVALORI),
                       by = select(daportes.DBF, CEDULA),
@@ -166,45 +164,67 @@ o0.vrCupo <- aggregate(x = select(daportes.DBF, CAPINGRE, CAPANUAL,
 o1.vrCupo <- rowSums(o0.vrCupo[, 2:5], na.rm = TRUE)
 o2.vrCupo <- o1.vrCupo * 3
 
-### Fertilizante
+# Fertilizante
 f2.vrCupo <- o1.vrCupo * 2
 
-### Almacen
+# Almacen
 a2.vrCupo <- rowSums(o0.vrCupo[, 2:6], na.rm = TRUE)
 
-### Agregar todos los valor cupo
+# Agregar todos los valor cupo
 vr.cupo <- data.frame(o0.vrCupo$CEDULA, o2.vrCupo, f2.vrCupo, a2.vrCupo)
 noms.disponible <- c("CEDULA", "Ordinario", "Fertilizante", "Almacen") 
 names(vr.cupo) <- noms.disponible
 
 library(tidyr)
-prueba <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
+vr.cupo <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
+
 
 ##Valor Creditos
 
-###Ordinario
-
+# Ordinario
 o2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
                                       vr.actual), 
                            by = select(car_vigente[car_vigente$CODCREDITO != 6,],
                                        CEDULA),
                            FUN = sum)
+names(o2.vrCreditos)[2] <- "Ordinario"
 
-##Fertilizante
-
+# Fertilizante
 f2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO == 6,],
                                       vr.actual), 
                            by = select(car_vigente[car_vigente$CODCREDITO == 6,],
                                        CEDULA),
                            FUN = sum)
+names(f2.vrCreditos)[2] <- "Fertilizante"
 
-
-
-##Almacen
+# Almacen
 a2.vrCreditos <- aggregate(x = select(factalma.DBF, VALOR),
                            by = select(factalma.DBF, CEDULA),
                            FUN = sum)
+names(a2.vrCreditos)[2] <- "Almacen"
 
+# Agregar todos los valor creditos
+vr.credito <- full_join(o2.vrCreditos, f2.vrCreditos, by = "CEDULA")
+vr.credito <- full_join(vr.credito, a2.vrCreditos, by = "CEDULA")
+library(tidyr)
+vr.credito <- gather(vr.credito, "Tipo", "vr.credito", Ordinario:Almacen)
+
+
+## Concatenar valor cupo y valor crédito
+
+
+
+
+## Valor Disponible
+
+# Ordinario
+o.vrDisponible <- o2.vrCupo - o2.vrCreditos$Ordinario
+
+# Fertilizante
+f.vrDisponible <- f2.vrCupo - f2.vrCreditos$Fertilizante
+
+# almacen
+a.vrDisponible <- a2.vrCupo - a2.vrCreditos$Almacen
 
 # 6. TOTALES --------------------------------------------------------------
 

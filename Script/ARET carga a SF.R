@@ -1,4 +1,3 @@
-# Ruta PC oficina
 setwd("Datos")
 
 # Importar datos ----------------------------------------------------------
@@ -211,58 +210,135 @@ vr.credito <- gather(vr.credito, "Tipo", "vr.credito", Ordinario:Almacen)
 
 
 ## Concatenar valor cupo y valor crédito
+f.disponible <- full_join(vr.cupo, vr.credito, by = c("CEDULA", "Tipo"))
 
 
+## Valor Disponible (actualizar con vrActualAfecta!!!!)
+
+vr.disponible <- ifelse(f.disponible$Tipo == "Ordinario",
+                        f.disponible$vr.cupo - f.disponible$vr.credito,
+                        f.disponible$vr.cupo - f.disponible$vr.credito)
 
 
-## Valor Disponible
-
-# Ordinario
-o.vrDisponible <- o2.vrCupo - o2.vrCreditos$Ordinario
-
-# Fertilizante
-f.vrDisponible <- f2.vrCupo - f2.vrCreditos$Fertilizante
-
-# almacen
-a.vrDisponible <- a2.vrCupo - a2.vrCreditos$Almacen
 
 # 6. TOTALES --------------------------------------------------------------
 
 ## Generar vrActualAfecta
+
 noAfectaCu1 <- f.RelCartAsoc$NOAFECTACU == 1 & !is.na(f.RelCartAsoc$vr.actual)
 
 vrActualAfecta <- ifelse(noAfectaCu1 == FALSE,
                          NA, f.RelCartAsoc$vr.actual)
 
-pruebaNAC <- data.frame(f.RelCartAsoc$NOAFECTACU,
-                        f.RelCartAsoc$vr.actual,
-                        noAfectaCu1,
-                        vrActualAfecta)
+# pruebaNAC <- data.frame(f.RelCartAsoc$NOAFECTACU,
+#                         f.RelCartAsoc$vr.actual,
+#                         noAfectaCu1,
+#                         vrActualAfecta)
 
 temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
 
-vrActualAfecta <- aggregate(x = temp_vr.actual$vrActualAfecta,
+vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
                             by = select(temp_vr.actual, CEDULA),
                             FUN = sum,
                             na.rm = TRUE)
-# Prueba
-temp_vr.actual$vrActualAfecta <-format(temp_vr.actual$vrActualAfecta,
-                                       scientific = FALSE)
-write.csv(temp_vr.actual, "completo2.csv")
-vrActualAfecta$x <-format(vrActualAfecta$x,
-                          scientific = FALSE)
-write.csv(vrActualAfecta, "agregado2.csv")
 
+# # Prueba
+# temp_vr.actual$vrActualAfecta <-format(temp_vr.actual$vrActualAfecta,
+#                                        scientific = FALSE)
+# write.csv(temp_vr.actual, "completo2.csv")
+# vrActualAfecta$x <-format(vrActualAfecta$x,
+#                           scientific = FALSE)
+# write.csv(vrActualAfecta, "agregado2.csv")
 
 f.totales <- vrActualAfecta
 
+# ## Remover objetos innecesarios para pr?ximos pasos
+# rm("archivos.dbf", "aso_mfincas.DBF", "car_mcre.DBF", "car_pagos.DBF",
+#    "car_vigente.DBF", "daportes.DBF", "estado", "estado.almacCafe",
+#    "factalma.DBF", "fecha", "id.car_pagos", "id.join", "malmacen.DBF",
+#    "sum.vrPagos", "vars.almacCafe", "vars.car_vigente", "i",
+#    "vars.movCapital", "vars.observaciones", "vr.actual", "vr.pagos")
 
-## Remover objetos innecesarios para pr?ximos pasos
-rm("archivos.dbf", "aso_mfincas.DBF", "car_mcre.DBF", "car_pagos.DBF",
-   "car_vigente.DBF", "daportes.DBF", "estado", "estado.almacCafe",
-   "factalma.DBF", "fecha", "id.car_pagos", "id.join", "malmacen.DBF",
-   "sum.vrPagos", "vars.almacCafe", "vars.car_vigente", "i",
-   "vars.movCapital", "vars.observaciones", "vr.actual", "vr.pagos" )
+
+## Total Cartera Vencida
+t.carVencida <- aggregate(x = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vencido",],
+                                     vr.actual), 
+                          by = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vencido",],
+                                      CEDULA),
+                          FUN = sum,
+                          na.rm = TRUE)
+names(t.carVencida)[2] <- "car.vencida"
+f.totales <- full_join(f.totales, t.carVencida, by = "CEDULA")
+
+## Total Cartera Vigente
+t.carVigente <- aggregate(x = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vigente",],
+                                     vr.actual), 
+                          by = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vigente",],
+                                      CEDULA),
+                          FUN = sum,
+                          na.rm = TRUE)
+names(t.carVigente)[2] <- "car.vigente"
+f.totales <- full_join(f.totales, t.carVigente, by = "CEDULA")
+
+
+## Total cartera
+f.totales <- data.frame(f.totales,
+                        cartera = rowSums(select(f.totales,
+                                                 car.vencida,
+                                                 car.vigente),
+                                          na.rm = TRUE))
+
+## Interés Pendiente/Interés Pendiente Castigado
+## 
+## Costas Judiciales
+## 
+## Almacén Vencido
+t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
+                                     VALOR),
+                          by = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
+                                      CEDULA),
+                          FUN = sum,
+                          na.rm = TRUE)
+names(t.almVencido)[2] <- "almac.vencida"
+f.totales <- full_join(f.totales, t.almVencido, by = "CEDULA")
+
+## Almacén Vigente
+t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vigente",],
+                                     VALOR),
+                          by = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vigente",],
+                                      CEDULA),
+                          FUN = sum,
+                          na.rm = TRUE)
+names(t.almVigente)[2] <- "almac.vigente"
+f.totales <- full_join(f.totales, t.almVigente, by = "CEDULA")
+
+## Total almacén
+f.totales <- data.frame(f.totales,
+                        almacen = rowSums(select(f.totales,
+                                                 almac.vencida,
+                                                 almac.vigente),
+                                          na.rm = TRUE))
+
+## Debe aportes
+## 
+## Total deuda
+## 
+## Aportes
+t.aportes <- data.frame(select(o0.vrCupo, CEDULA),
+                      aportes = rowSums(o0.vrCupo[, 2:5], na.rm = TRUE))
+
+f.totales <- full_join(f.totales, t.aportes, by = "CEDULA")
+
+## Revalorización
+t.revalori <- data.frame(select(o0.vrCupo, CEDULA),
+                        revalori = o0.vrCupo[, 6])
+f.totales <- full_join(f.totales, t.revalori, by = "CEDULA")
+
+## Capital
+t.capital <- data.frame(select(o0.vrCupo, CEDULA),
+                        capital = rowSums(o0.vrCupo[, 2:6], na.rm = TRUE))
+
+f.totales <- full_join(f.totales, t.capital, by = "CEDULA")
 
 # Subir datos a Salesforce ------------------------------------------------
 

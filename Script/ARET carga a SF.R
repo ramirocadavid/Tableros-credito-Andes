@@ -180,6 +180,24 @@ names(vr.cupo) <- noms.disponible
 library(tidyr)
 prueba <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
 
+##Valor Creditos
+
+###Ordinario
+
+oO.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
+                                      vr.actual), 
+                            by = select(car_vigente[car_vigente$CODCREDITO != 6,],
+                                        CEDULA),
+                            FUN = sum)
+
+##Fertilizante
+
+
+
+##Almacen
+oO.vrCreditos <- aggregate(x = select(factalma, vr.actual),
+                           by = select(car_vigente, CEDULA),
+                           FUN = sum)
 
 # 6. TOTALES --------------------------------------------------------------
 

@@ -173,6 +173,24 @@ a2.vrCupo <- rowSums(o0.vrCupo[, 2:6], na.rm = TRUE)
 
 vr.Cupo <- c(o2.vrCupo, f2.vrCupo, a2.vrCupo)
 
+##Valor Creditos
+
+###Ordinario
+
+oO.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
+                                      vr.actual), 
+                            by = select(car_vigente[car_vigente$CODCREDITO != 6,],
+                                        CEDULA),
+                            FUN = sum)
+
+##Fertilizante
+
+
+
+##Almacen
+oO.vrCreditos <- aggregate(x = select(factalma, vr.actual),
+                           by = select(car_vigente, CEDULA),
+                           FUN = sum)
 
 # 6. TOTALES --------------------------------------------------------------
 

@@ -184,20 +184,27 @@ prueba <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
 
 ###Ordinario
 
-oO.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
+o2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
                                       vr.actual), 
-                            by = select(car_vigente[car_vigente$CODCREDITO != 6,],
-                                        CEDULA),
-                            FUN = sum)
+                           by = select(car_vigente[car_vigente$CODCREDITO != 6,],
+                                       CEDULA),
+                           FUN = sum)
 
 ##Fertilizante
+
+f2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO == 6,],
+                                      vr.actual), 
+                           by = select(car_vigente[car_vigente$CODCREDITO == 6,],
+                                       CEDULA),
+                           FUN = sum)
 
 
 
 ##Almacen
-oO.vrCreditos <- aggregate(x = select(factalma, vr.actual),
-                           by = select(car_vigente, CEDULA),
+a2.vrCreditos <- aggregate(x = select(factalma.DBF, VALOR),
+                           by = select(factalma.DBF, CEDULA),
                            FUN = sum)
+
 
 # 6. TOTALES --------------------------------------------------------------
 

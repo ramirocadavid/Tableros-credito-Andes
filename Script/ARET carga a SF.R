@@ -155,6 +155,7 @@ names(f.observaciones)[names(f.observaciones) == "CEDASOCIAD"] <- "CEDULA"
 # 5. DISPONIBLE -----------------------------------------------------------
 linea <- c("Ordinario", "Fertilizante", "Almacén")
 
+
 ## Valor cupo
 
 ### Ordinario
@@ -171,7 +172,13 @@ f2.vrCupo <- o1.vrCupo * 2
 ### Almacen
 a2.vrCupo <- rowSums(o0.vrCupo[, 2:6], na.rm = TRUE)
 
-vr.Cupo <- c(o2.vrCupo, f2.vrCupo, a2.vrCupo)
+### Agregar todos los valor cupo
+vr.cupo <- data.frame(o0.vrCupo$CEDULA, o2.vrCupo, f2.vrCupo, a2.vrCupo)
+noms.disponible <- c("CEDULA", "Ordinario", "Fertilizante", "Almacen") 
+names(vr.cupo) <- noms.disponible
+
+library(tidyr)
+prueba <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
 
 
 # 6. TOTALES --------------------------------------------------------------

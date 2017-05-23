@@ -2,7 +2,7 @@
 setwd("Datos")
 
 # Importar datos ----------------------------------------------------------
-archivos.dbf <- list.files(pattern = "*.DBF|*dbf")
+archivos.dbf <- list.files(pattern = "*.DBF|*.dbf")
 
 library(foreign)
 library(dplyr)
@@ -25,12 +25,13 @@ vars.car_vigente <- c("CEDULA", "CODCREDITO", "NUMERO", "FECHACRE", "FECHAVEN",
 car_vigente <- car_vigente.DBF[, vars.car_vigente]
 
 ## Agregar código de municipio
-MUNICIPIO <- substr(mmunicipio.dbf$CODIGO, 1, 3)
+MUNICIPIO <- substr(mmunicipio.dbf$CODIGO, 1,3)
 municipios <- data.frame(MUNICIPIO, mmunicipio.dbf)
 municipios <- unique(municipios[, c("MUNICIPIO", "NOMBRE")])
-car_vigente <- left_join(car_vigente, municipios,
+car_vigente <- left_join(car_vigente, select(municipios,
+                                             MUNICIPIO, NOMBRE),
                            by = "MUNICIPIO")
-car_vigente <- select(car_vigente, -matches("MUNICIPIO"))
+car_vigente <- select(car_vigente, -MUNICIPIO)
 names(car_vigente)[names(car_vigente) == "NOMBRE"] <- "MUNICIPIO"
 
 ## Agregar Nombre de crédito
@@ -67,7 +68,7 @@ id.join <- as.factor(id.join)
 car_vigente <- data.frame(id.join, car_vigente)
 
 car_vigente <- left_join(car_vigente, sum.vrPagos, by = "id.join")
-table(is.na(car_vigente$vr.pagos)) # 1520 (7%) en blanco
+# table(is.na(car_vigente$vr.pagos)) # 1520 (7%) en blanco
 
 ## Generar Vr.actual y estado, y agregarlos a 'Relaci?n cartera asociado'
 vr.actual <- car_vigente$VRCREDITO - car_vigente$vr.pagos
@@ -115,46 +116,65 @@ f.RelCartAsoc <- rbind(car_vigente, car_castigada)
 
 # 2. ALMACENES DE CAFÉ ----------------------------------------------------
 
-
 ## Seleccionar variables en factalma 
 vars.almacCafe <- c("CEDULA", "ALMACEN", "REFERENCIA", 
                     "FECHA", "FECVEN", "VALOR")
 f.almacCafe <- factalma.DBF[, vars.almacCafe]
-
-
 
 ## Crear variable de estados y agregarla 'Almacenes de caf?'
 fecha <- Sys.Date()
 estado.almacCafe <- ifelse(f.almacCafe$FECVEN < fecha, "Vencida", "Vigente")
 f.almacCafe <- data.frame(f.almacCafe, estado.almacCafe)
 
+## Agregar nombre de almacén
+f.almacCafe <- left_join(f.almacCafe, 
+                         malmacen.DBF[, c("CODALMACEN", "NOMALMACEN")],
+                         by = c("ALMACEN" = "CODALMACEN"))
 
 
 # 3. MOVIMIENTO DETALLADO CAPITAL ASOCIADO --------------------------------
-
 
 vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "DESCPTMO",
                      "CAPCAFE", "REVALORI", "KILCAFE", "CAPINGRE")
 f.movCapital <- daportes.DBF[, vars.movCapital]
 
+# ## Debe (preguntar a Liliana)
+# id.mcuoingr <- paste(mcuoingr.dbf$MUNICIPIO, mcuoingr.dbf$PERIODO,
+#                      mcuoingr.dbf$FECHA)
+# mcuoingr <- data.frame(id.mcuoingr, mcuoingr.dbf$CAPITAL)
+
 
 
 # 4. OBSERVACIONES --------------------------------------------------------
 
-
 vars.observaciones <- c("CEDASOCIAD", "OBSERVA1", "OBSERVA2", "OBSERVA3")
-observaciones <- masociado.DBF[, vars.observaciones]
-observ <- paste(observaciones[, 2],
-                observaciones[, 3],
-                observaciones[, 4],
-                sep = " ## ")
-f.observaciones <- data.frame(observaciones[1], observ)
-names(f.observaciones)[1] <- "CEDULA"
+f.observaciones <- masociado.DBF[, vars.observaciones]
+names(f.observaciones)[names(f.observaciones) == "CEDASOCIAD"] <- "CEDULA"
 
 
+# 5. DISPONIBLE -----------------------------------------------------------
+linea <- c("Ordinario", "Fertilizante", "Almacén")
 
-# 5. TOTALES --------------------------------------------------------------
+## Valor cupo
 
+### Ordinario
+o0.vrCupo <- aggregate(x = select(daportes.DBF, CAPINGRE, CAPANUAL,
+                                 DESCPTMO, CAPCAFE, REVALORI),
+                      by = select(daportes.DBF, CEDULA),
+                      FUN = sum)
+o1.vrCupo <- rowSums(o0.vrCupo[, 2:5], na.rm = TRUE)
+o2.vrCupo <- o1.vrCupo * 3
+
+### Fertilizante
+f2.vrCupo <- o1.vrCupo * 2
+
+### Almacen
+a2.vrCupo <- rowSums(o0.vrCupo[, 2:6], na.rm = TRUE)
+
+vr.Cupo <- c(o2.vrCupo, f2.vrCupo, a2.vrCupo)
+
+
+# 6. TOTALES --------------------------------------------------------------
 
 ## Generar vrActualAfecta
 noAfectaCu1 <- f.RelCartAsoc$NOAFECTACU == 1 & !is.na(f.RelCartAsoc$vr.actual)
@@ -324,3 +344,7 @@ batches_detail <- lapply(batches_f.almacCafe,
                          })
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
+
+
+
+

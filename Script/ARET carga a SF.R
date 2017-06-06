@@ -149,7 +149,10 @@ f.movCapital <- daportes.DBF[, vars.movCapital]
 vars.observaciones <- c("CEDASOCIAD", "OBSERVA1", "OBSERVA2", "OBSERVA3")
 f.observaciones <- masociado.DBF[, vars.observaciones]
 names(f.observaciones)[names(f.observaciones) == "CEDASOCIAD"] <- "CEDULA"
-
+f.observaciones <- gather(f.observaciones, borrar, Observaciones,
+                          OBSERVA1:OBSERVA3)
+f.observaciones <- select(f.observaciones, -matches("borrar"))
+f.observaciones <- f.observaciones[!is.na(f.observaciones$Observaciones), ]
 
 # 5. DISPONIBLE -----------------------------------------------------------
 
@@ -336,7 +339,7 @@ f.totales <- left_join(f.totales, t.capital, by = "CEDULA")
 
 # 7. BORRAR DATOS EXISTENTES EN SALESFORCE --------------------------------
 
-
+# Parte de esto ya está hecho en el script 'Borrar datos.R'
 
 # 8. CREAR PRODUCTORES NUEVOS EN SALESFORCE -------------------------------
 
@@ -391,7 +394,7 @@ f.totales <- left_join(f.totales, t.capital, by = "CEDULA")
 
 
 
-# 9. CARGAR DATOS A SALESFORCE --------------------------------------------
+# 9. CARGAR CRÉDITO TOTAL -------------------------------------------------
 
 # Descargar farmers de Salesforce (cédula y id)
 
@@ -408,23 +411,32 @@ productores.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c", fields)
 # Agregar ID de Salesforce a f.totales
 
 f.totales$CEDULA <- as.factor(f.totales$CEDULA)
-f.totales <- left_join(f.totales, productores.sf,
+f.totales <- inner_join(f.totales, productores.sf,
                        by = c("CEDULA" = "Documento_identidad__c"))
 
 
-
 # Descripción objeto
-desc.credito_total <- rforcecom.getObjectDescription(session, "credito_Total__c")
+# desc.credito_total <- rforcecom.getObjectDescription(session, "credito_Total__c")
+
+# Limpiar y renombrar variables f.totales por API names
+f.totales <- f.totales[, c(12, 1, 3:11)]
+
+names(f.totales) <- c("Farmer__c","Cedula__c",  "Cartera_Vencida__c",
+                      "Cartera_vigente__c", "Total_cartera__c",
+                      "Almacen_vencido__c", "Almacen_vigente__c",
+                      "Total_almacen__c", "Aportes__c", "Revalorizacion__c",
+                      "Total_Capital__c")
+
 
 # run an insert job into the Account object
 job_info <- rforcecom.createBulkJob(session, 
                                     operation='insert', 
-                                    object='Account')
+                                    object='credito_Total__c')
 
 # split into batch sizes of 500 (2 batches for our 1000 row sample dataset)
 batches_info <- rforcecom.createBulkBatch(session, 
                                           jobId=job_info$id, 
-                                          data, 
+                                          f.totales, 
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
@@ -443,79 +455,26 @@ batches_detail <- lapply(batches_info,
                                                         batchId=x$id)
                          })
 
-
-## Crear registros de objeto 'Crédito total'
-## https://taroworks-8629.cloudforce.com/01I36000001shlx?setupid=CustomObjects
-
-
-## Agregar ID de 'Crédito total' a los objetos restantes
-
-### Agregar ID de Salesforce (CORREGIR ESTO, EL ID ES DE 'CRÉDITO TOTAL'!!!!)
-
-f.almacCafe$CEDULA <- as.factor(f.almacCafe$CEDULA)
-f.movCapital$CEDULA <- as.factor(f.movCapital$CEDULA)
-f.observaciones$CEDULA <- as.factor(f.observaciones$CEDULA)
-f.RelCartAsoc$CEDULA <- as.factor(f.RelCartAsoc$CEDULA)
-names(productores.sf)[2] <- "CEDULA"
-
-f.almacCafe <- left_join(f.almacCafe, productores.sf, 
-                         by = "CEDULA")
-f.movCapital <- left_join(f.movCapital, productores.sf, 
-                          by = "CEDULA")
-f.observaciones <- left_join(f.observaciones, productores.sf, 
-                             by = "CEDULA")
-f.RelCartAsoc <- left_join(f.RelCartAsoc, productores.sf, 
-                           by = "CEDULA")
-
-### Renombrar variables
-names(f.almacCafe) <- c("CEDULA", "ALMACEN", "REFERENCIA", "FECHA", "FECVEN",
-                        "VALOR", "estado.almacCafe", "Id"  )
-
-### Cargar datos
-
-job_info <- rforcecom.createBulkJob(session,
-                                    operation='insert',
-                                    object='RForcecom__c')
-#### almacCafe
-batches_f.almacCafe <- rforcecom.createBulkBatch(session,
-                                          jobId=job_info$id,
-                                          f.almacCafe,
-                                          multiBatch = TRUE,
-                                          batchSize=200)
-#### movCapital
-batches_f.movCapital <- rforcecom.createBulkBatch(session,
-                                          jobId=job_info$id,
-                                          f.movCapital,
-                                          multiBatch = TRUE,
-                                          batchSize=200)
-#### observaciones
-batches_f.observaciones <- rforcecom.createBulkBatch(session,
-                                          jobId=job_info$id,
-                                          f.observaciones,
-                                          multiBatch = TRUE,
-                                          batchSize=200)
-#### RelCartAsoc
-batches_f.RelCartAsoc <- rforcecom.createBulkBatch(session,
-                                          jobId=job_info$id,
-                                          f.RelCartAsoc,
-                                          multiBatch = TRUE,
-                                          batchSize=200)
-batches_status <- lapply(batches_f.almacCafe,
-                         FUN=function(x){
-                               rforcecom.checkBatchStatus(session,
-                                                          jobId=x$jobId,
-                                                          batchId=x$id)
-                         })
-
-batches_detail <- lapply(batches_f.almacCafe,
-                         FUN=function(x){
-                               rforcecom.getBatchDetails(session,
-                                                         jobId=x$jobId,
-                                                         batchId=x$id)
-                         })
-
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 
+# 10. CARGAR OBSERVACIONES ------------------------------------------------
 
 
+# Preparar datos
+
+## Descargar registros de 'Crédito total'
+campos.cd <- c("Cedula__c", "Id")
+credito.total <- rforcecom.retrieve(session, "credito_Total__c", campos.cd)
+
+## Observaciones
+f.observaciones$CEDULA <- as.factor(f.observaciones$CEDULA)
+f.observaciones <- inner_join(f.observaciones, credito.total,
+                              by = c("CEDULA" = "Cedula__c"))
+
+## AlmacCafe
+
+
+# Cargar a Salesforce
+
+# Validar

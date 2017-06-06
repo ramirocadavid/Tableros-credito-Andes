@@ -235,7 +235,6 @@ vrActualAfecta <- ifelse(noAfectaCu1 == FALSE,
 #                         vrActualAfecta)
 
 temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
-
 vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
                             by = select(temp_vr.actual, CEDULA),
                             FUN = sum,
@@ -250,13 +249,6 @@ vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
 # write.csv(vrActualAfecta, "agregado2.csv")
 
 f.totales <- vrActualAfecta
-
-# ## Remover objetos innecesarios para pr?ximos pasos
-# rm("archivos.dbf", "aso_mfincas.DBF", "car_mcre.DBF", "car_pagos.DBF",
-#    "car_vigente.DBF", "daportes.DBF", "estado", "estado.almacCafe",
-#    "factalma.DBF", "fecha", "id.car_pagos", "id.join", "malmacen.DBF",
-#    "sum.vrPagos", "vars.almacCafe", "vars.car_vigente", "i",
-#    "vars.movCapital", "vars.observaciones", "vr.actual", "vr.pagos")
 
 
 ## Total Cartera Vencida
@@ -288,9 +280,9 @@ f.totales <- data.frame(f.totales,
                                           na.rm = TRUE))
 
 ## Interés Pendiente/Interés Pendiente Castigado
-## 
+ 
 ## Costas Judiciales
-## 
+ 
 ## Almacén Vencido
 t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
                                      VALOR),
@@ -299,7 +291,7 @@ t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe ==
                           FUN = sum,
                           na.rm = TRUE)
 names(t.almVencido)[2] <- "almac.vencida"
-f.totales <- full_join(f.totales, t.almVencido, by = "CEDULA")
+f.totales <- left_join(f.totales, t.almVencido, by = "CEDULA")
 
 ## Almacén Vigente
 t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vigente",],
@@ -309,7 +301,7 @@ t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe ==
                           FUN = sum,
                           na.rm = TRUE)
 names(t.almVigente)[2] <- "almac.vigente"
-f.totales <- full_join(f.totales, t.almVigente, by = "CEDULA")
+f.totales <- left_join(f.totales, t.almVigente, by = "CEDULA")
 
 ## Total almacén
 f.totales <- data.frame(f.totales,
@@ -319,91 +311,35 @@ f.totales <- data.frame(f.totales,
                                           na.rm = TRUE))
 
 ## Debe aportes
-## 
+
 ## Total deuda
-## 
+
+
 ## Aportes
 t.aportes <- data.frame(select(o0.vrCupo, CEDULA),
                       aportes = rowSums(o0.vrCupo[, 2:5], na.rm = TRUE))
 
-f.totales <- full_join(f.totales, t.aportes, by = "CEDULA")
+f.totales <- left_join(f.totales, t.aportes, by = "CEDULA")
 
 ## Revalorización
 t.revalori <- data.frame(select(o0.vrCupo, CEDULA),
                         revalori = o0.vrCupo[, 6])
-f.totales <- full_join(f.totales, t.revalori, by = "CEDULA")
+f.totales <- left_join(f.totales, t.revalori, by = "CEDULA")
 
 ## Capital
 t.capital <- data.frame(select(o0.vrCupo, CEDULA),
                         capital = rowSums(o0.vrCupo[, 2:6], na.rm = TRUE))
 
-f.totales <- full_join(f.totales, t.capital, by = "CEDULA")
+f.totales <- left_join(f.totales, t.capital, by = "CEDULA")
 
 
-# PRUEBA RFORCECOM --------------------------------------------------------
 
-# Salesforce login
-library(RForcecom)
-username <- "admin@andes.org"
-password <- "admgf2017*XQWRiDpPU6NzJC9Cmm185FF2"
-instanceURL <- "https://taroworks-8629.cloudforce.com/"
-apiVersion <- "36.0"
-session <- rforcecom.login(username, password, instanceURL, apiVersion) 
-
-# Crear datos
-ABC__c <- rep(c("a", "b", "c"), 100)
-Numero__c <- round(rnorm(300, mean = 10, sd = 2), digits = 0)
-Name <- c()
-for(i in 1:300) {
-     Name <- c(Name, paste("name", i))
-}
-
-data <- data.frame(Name, Numero__c, ABC__c)
-
-# Cargar datos
-
-## run an insert job into the Account object
-job_info <- rforcecom.createBulkJob(session, 
-                                    operation='insert', 
-                                    object='RForcecom__c')
-
-## split into batch sizes of 200
-batches_info <- rforcecom.createBulkBatch(session, 
-                                          jobId=job_info$id, 
-                                          data, 
-                                          multiBatch = TRUE, 
-                                          batchSize=200)
-
-## check on status of each batch
-batches_status <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.checkBatchStatus(session, 
-                                                         jobId=x$jobId, 
-                                                         batchId=x$id)
-                         })
-## get details on each batch
-batches_detail <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.getBatchDetails(session, 
-                                                        jobId=x$jobId, 
-                                                        batchId=x$id)
-                         })
-## close the job
-close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
+# 7. BORRAR DATOS EXISTENTES EN SALESFORCE --------------------------------
 
 
-# Subir datos a Salesforce ------------------------------------------------
 
-# # Crear productores nuevos en SF
-# 
-# # Conexi?n con Salesforce
-# library(RForcecom)
-# username <- "admin@andes.org"
-# password <- "admgf2017*XQWRiDpPU6NzJC9Cmm185FF2"
-# instanceURL <- "https://taroworks-8629.cloudforce.com/"
-# apiVersion <- "36.0"
-# session <- rforcecom.login(username, password, instanceURL, apiVersion)
-# 
+# 8. CREAR PRODUCTORES NUEVOS EN SALESFORCE -------------------------------
+
 # ## Descargar c?dulas y IDs de objeto farmer
 # objectName <- "gfmAg__Farmer__c"
 # fields <- c("Id", "Documento_identidad__c")
@@ -452,6 +388,61 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 # ## Crear persons
 # 
 # ## Crear farmers
+
+
+
+# 9. CARGAR DATOS A SALESFORCE --------------------------------------------
+
+# Descargar farmers de Salesforce (cédula y id)
+
+library(RForcecom)
+username <- "admin@andes.org"
+password <- "admgf2017*XQWRiDpPU6NzJC9Cmm185FF2"
+instanceURL <- "https://taroworks-8629.cloudforce.com/"
+apiVersion <- "36.0"
+session <- rforcecom.login(username, password, instanceURL, apiVersion)
+
+fields <- c("Id", "Documento_identidad__c")
+productores.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c", fields)
+
+# Agregar ID de Salesforce a f.totales
+
+f.totales$CEDULA <- as.factor(f.totales$CEDULA)
+f.totales <- left_join(f.totales, productores.sf,
+                       by = c("CEDULA" = "Documento_identidad__c"))
+
+
+
+# Descripción objeto
+desc.credito_total <- rforcecom.getObjectDescription(session, "credito_Total__c")
+
+# run an insert job into the Account object
+job_info <- rforcecom.createBulkJob(session, 
+                                    operation='insert', 
+                                    object='Account')
+
+# split into batch sizes of 500 (2 batches for our 1000 row sample dataset)
+batches_info <- rforcecom.createBulkBatch(session, 
+                                          jobId=job_info$id, 
+                                          data, 
+                                          multiBatch = TRUE, 
+                                          batchSize=500)
+
+# check on status of each batch
+batches_status <- lapply(batches_info, 
+                         FUN=function(x){
+                              rforcecom.checkBatchStatus(session, 
+                                                         jobId=x$jobId, 
+                                                         batchId=x$id)
+                         })
+# get details on each batch
+batches_detail <- lapply(batches_info, 
+                         FUN=function(x){
+                              rforcecom.getBatchDetails(session, 
+                                                        jobId=x$jobId, 
+                                                        batchId=x$id)
+                         })
+
 
 ## Crear registros de objeto 'Crédito total'
 ## https://taroworks-8629.cloudforce.com/01I36000001shlx?setupid=CustomObjects

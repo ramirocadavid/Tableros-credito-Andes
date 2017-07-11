@@ -26,7 +26,7 @@ for(i in seq_along(archivos.dbf)) {
 # 1. RELACIÓN CARTERA ASOCIADO -----------------------------------------------
 
 
-# 1.1. Informaci?n "Relaci?n Cartera Asociado": CAR_VIGENTE
+# 1.1. Informaci?n "Relación Cartera Asociado": CAR_VIGENTE
 
 ## Seleccionar variables de car_vigente y crear 'Relaci?n cartera asociado'
 vars.car_vigente <- c("CEDULA", "CODCREDITO", "NUMERO", "FECHACRE", "FECHAVEN",
@@ -58,7 +58,7 @@ id.car_pagos <- as.factor(id.car_pagos)
 vr.pagos <- data.frame(id.car_pagos, vr.pagos)
 sum.vrPagos <- aggregate(x = select(vr.pagos, CREDITO),
                          by = select(vr.pagos, id.car_pagos),
-                         FUN = sum)
+                         FUN = sum, na.rm = TRUE)
 names(sum.vrPagos) <- c("id.join", "vr.pagos")
 
 ## Prueba vr.pagos
@@ -80,7 +80,10 @@ car_vigente <- left_join(car_vigente, sum.vrPagos, by = "id.join")
 # table(is.na(car_vigente$vr.pagos)) # 1520 (7%) en blanco
 
 ## Generar Vr.actual y estado, y agregarlos a 'Relaci?n cartera asociado'
-vr.actual <- car_vigente$VRCREDITO - car_vigente$vr.pagos
+vr.actual <- car_vigente$VRCREDITO - ifelse(is.na(car_vigente$vr.pagos),
+                                            0,
+                                            car_vigente$vr.pagos)
+     
 
 fecha <- Sys.Date()
 estado <- ifelse(car_vigente$FECHAVEN < fecha, "Vencido", "Vigente")
@@ -106,7 +109,9 @@ car_castigada <- left_join(car_castigada, car_mcre.DBF[, c("CODCREDITO",
                            by = "CODCREDITO")
 
 ## Generar Vr.pagos y vr.actual
-vr.pagos <- car_castigada$VRCREDITO - car_castigada$VALORCASTI
+vr.pagos <- car_castigada$VRCREDITO - ifelse(is.na(car_castigada$VALORCASTI),
+                                             0,
+                                             car_castigada$VALORCASTI)
 car_castigada <- data.frame(car_castigada, vr.pagos)
 names(car_castigada)[names(car_castigada) == "VALORCASTI"] <- "vr.actual"
 
@@ -143,14 +148,37 @@ f.almacCafe <- left_join(f.almacCafe,
 
 # 3. MOVIMIENTO DETALLADO CAPITAL ASOCIADO --------------------------------
 
+## Variables iniciales
+
 vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "DESCPTMO",
                      "CAPCAFE", "REVALORI", "KILCAFE")
-f.movCapital <- daportes.DBF[, vars.movCapital]
+movCapital <- daportes.DBF[, vars.movCapital]
 
-# ## Debe (preguntar a Liliana)
-# id.mcuoingr <- paste(mcuoingr.dbf$MUNICIPIO, mcuoingr.dbf$PERIODO,
-#                      mcuoingr.dbf$FECHA)
-# mcuoingr <- data.frame(id.mcuoingr, mcuoingr.dbf$CAPITAL)
+
+## Debe
+
+library(data.table)
+
+f.movCapital <- setDT(movCapital)
+colsAgg <- c("CAPINGRE", "CAPANUAL", "DESCPTMO", "CAPCAFE",
+             "REVALORI", "KILCAFE")
+f.movCapital <- f.movCapital[, lapply(.SD, sum),
+                               by=.(CEDULA, PERIODO),
+                               .SDcols = colsAgg]
+f.movCapital <- setDF(f.movCapital)
+
+debe <- ifelse(80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8) > 0,
+               80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8),
+               0)
+
+f.movCapital <- data.frame(f.movCapital, debe)
+
+
+## Resultado 1 (Estas variables no están en los objetos, por el
+## Momento no se van a construir )
+
+# f.movCapital <- data.frame(f.movCapital,
+#                            resultado1 = debe - f.movCapital$CAPINGRE)
 
 
 
@@ -173,7 +201,7 @@ f.observaciones <- f.observaciones[!is.na(f.observaciones$Observaciones), ]
 o0.vrCupo <- aggregate(x = select(daportes.DBF, CAPINGRE, CAPANUAL,
                                  DESCPTMO, CAPCAFE, REVALORI),
                       by = select(daportes.DBF, CEDULA),
-                      FUN = sum)
+                      FUN = sum, na.rm = TRUE)
 o1.vrCupo <- rowSums(o0.vrCupo[, 2:5], na.rm = TRUE)
 o2.vrCupo <- o1.vrCupo * 3
 
@@ -194,25 +222,24 @@ vr.cupo <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
 ##Valor Creditos
 
 # Ordinario
-o2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO != 6,],
-                                      vr.actual), 
-                           by = select(car_vigente[car_vigente$CODCREDITO != 6,],
-                                       CEDULA),
-                           FUN = sum)
-names(o2.vrCreditos)[2] <- "Ordinario"
+car_vigente_no6 <- car_vigente[car_vigente$CODCREDITO != 6,]
+
+o2.vrCreditos <- aggregate(x = select(car_vigente_no6, vr.actual), 
+                           by = select(car_vigente_no6, CEDULA),
+                           FUN = sum, na.rm = TRUE)
 
 # Fertilizante
-f2.vrCreditos <- aggregate(x = select(car_vigente[car_vigente$CODCREDITO == 6,],
-                                      vr.actual), 
-                           by = select(car_vigente[car_vigente$CODCREDITO == 6,],
-                                       CEDULA),
-                           FUN = sum)
+car_vigente_6 <- car_vigente[car_vigente$CODCREDITO == 6,]
+
+f2.vrCreditos <- aggregate(x = select(car_vigente_6, vr.actual), 
+                           by = select(car_vigente_6, CEDULA),
+                           FUN = sum, na.rm = TRUE)
 names(f2.vrCreditos)[2] <- "Fertilizante"
 
 # Almacen
 a2.vrCreditos <- aggregate(x = select(factalma.DBF, VALOR),
                            by = select(factalma.DBF, CEDULA),
-                           FUN = sum)
+                           FUN = sum, na.rm = TRUE)
 names(a2.vrCreditos)[2] <- "Almacen"
 
 # Agregar todos los valor creditos
@@ -226,6 +253,25 @@ f.disponible <- full_join(vr.cupo, vr.credito, by = c("CEDULA", "Tipo"))
 
 
 ## Valor Disponible (actualizar con vrActualAfecta!!!!)
+
+# VrActualAfecta (pertenece a totales)
+noAfectaCu1 <- f.RelCartAsoc$NOAFECTACU == 1 & !is.na(f.RelCartAsoc$vr.actual)
+
+vrActualAfecta <- ifelse(noAfectaCu1 == FALSE,
+                         NA, f.RelCartAsoc$vr.actual)
+
+# pruebaNAC <- data.frame(f.RelCartAsoc$NOAFECTACU,
+#                         f.RelCartAsoc$vr.actual,
+#                         noAfectaCu1,
+#                         vrActualAfecta)
+
+temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
+vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
+                            by = select(temp_vr.actual, CEDULA),
+                            FUN = sum,
+                            na.rm = TRUE)
+
+## fkldjdñaj
 
 vr.disponible <- ifelse(f.disponible$Tipo == "Ordinario",
                         f.disponible$vr.cupo - f.disponible$vr.credito,

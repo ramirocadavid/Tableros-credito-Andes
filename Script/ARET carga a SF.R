@@ -296,35 +296,6 @@ f.disponible <- select(f.disponible, -matches("vrActualAfecta"))
 
 # 6. TOTALES --------------------------------------------------------------
 
-## Generar vrActualAfecta
-
-noAfectaCu1 <- f.RelCartAsoc$NOAFECTACU == 1 & !is.na(f.RelCartAsoc$vr.actual)
-
-vrActualAfecta <- ifelse(noAfectaCu1 == FALSE,
-                         NA, f.RelCartAsoc$vr.actual)
-
-# pruebaNAC <- data.frame(f.RelCartAsoc$NOAFECTACU,
-#                         f.RelCartAsoc$vr.actual,
-#                         noAfectaCu1,
-#                         vrActualAfecta)
-
-temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
-vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
-                            by = select(temp_vr.actual, CEDULA),
-                            FUN = sum,
-                            na.rm = TRUE)
-
-# # Prueba
-# temp_vr.actual$vrActualAfecta <-format(temp_vr.actual$vrActualAfecta,
-#                                        scientific = FALSE)
-# write.csv(temp_vr.actual, "completo2.csv")
-# vrActualAfecta$x <-format(vrActualAfecta$x,
-#                           scientific = FALSE)
-# write.csv(vrActualAfecta, "agregado2.csv")
-
-f.totales <- vrActualAfecta
-
-
 ## Total Cartera Vencida
 t.carVencida <- aggregate(x = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vencido",],
                                      vr.actual), 
@@ -333,7 +304,7 @@ t.carVencida <- aggregate(x = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Venc
                           FUN = sum,
                           na.rm = TRUE)
 names(t.carVencida)[2] <- "car.vencida"
-f.totales <- full_join(f.totales, t.carVencida, by = "CEDULA")
+f.totales <- t.carVencida
 
 ## Total Cartera Vigente
 t.carVigente <- aggregate(x = select(f.RelCartAsoc[f.RelCartAsoc$estado == "Vigente",],
@@ -353,9 +324,84 @@ f.totales <- data.frame(f.totales,
                                                  car.vigente),
                                           na.rm = TRUE))
 
+
 ## Interés Pendiente/Interés Pendiente Castigado
- 
-## Costas Judiciales
+
+### Interés pendiente
+
+t.intPend <- aggregate(x = select(car_pendien.DBF[car_pendien.DBF$ESTADO != 1, ],
+                                        VALOR, VRPAGOS),
+                             by = select(car_pendien.DBF[car_pendien.DBF$ESTADO != 1, ],
+                                         CEDULA),
+                             FUN = sum, na.rm = TRUE)
+
+intPend <- ifelse(is.na(t.intPend$VALOR), 
+                        0, t.intPend$VALOR) -
+     ifelse(is.na(t.intPend$VRPAGOS), 
+            0, t.intPend$VRPAGOS)
+
+t.intPend <- data.frame(t.intPend, intPend)
+t.intPend <- select(t.intPend, CEDULA, intPend)
+
+### Interés pendiente castigado
+
+t.intPendCast <- aggregate(x = select(car_pendien_castigada.DBF,
+                                  VALOR, VRPAGOS),
+                       by = select(car_pendien_castigada.DBF,
+                                   CEDULA),
+                       FUN = sum, na.rm = TRUE)
+
+intPendCast <- ifelse(is.na(t.intPendCast$VALOR), 
+                        0, t.intPendCast$VALOR) -
+     ifelse(is.na(t.intPendCast$VRPAGOS), 
+            0, t.intPendCast$VRPAGOS)
+
+t.intPendCast <- data.frame(t.intPendCast, intPendCast)
+t.intPendCast <- select(t.intPendCast, CEDULA, intPendCast)
+
+### Joint a f.totales
+f.totales <- left_join(f.totales, t.intPend, by = "CEDULA")
+f.totales <- left_join(f.totales, t.intPendCast, by = "CEDULA")
+
+
+## Costas Judiciales/castigadas
+
+### Costas judiciales
+
+t.costJud <- aggregate(x = select(car_cosj.DBF[car_cosj.DBF$ESTADO != 1, ],
+                                  VALOR, VRPAGO),
+                       by = select(car_cosj.DBF[car_cosj.DBF$ESTADO != 1, ],
+                                   CEDULA),
+                       FUN = sum, na.rm = TRUE)
+
+costJud <- ifelse(is.na(t.costJud$VALOR), 
+                  0, t.costJud$VALOR) -
+     ifelse(is.na(t.costJud$VRPAGO), 
+            0, t.costJud$VRPAGO)
+
+t.costJud <- data.frame(t.costJud, costJud)
+t.costJud <- select(t.costJud, CEDULA, costJud)
+
+### Costas judiciales castigadas
+
+t.costJudCast <- aggregate(x = select(car_cosj_castigada.DBF,
+                                  VALOR, VRPAGO),
+                       by = select(car_cosj_castigada.DBF,
+                                   CEDULA),
+                       FUN = sum, na.rm = TRUE)
+
+costJudCast <- ifelse(is.na(t.costJudCast$VALOR), 
+                  0, t.costJudCast$VALOR) -
+     ifelse(is.na(t.costJudCast$VRPAGO), 
+            0, t.costJudCast$VRPAGO)
+
+t.costJudCast <- data.frame(t.costJudCast, costJudCast)
+t.costJudCast <- select(t.costJudCast, CEDULA, costJudCast)
+
+### Joint a f.totales
+f.totales <- left_join(f.totales, t.costJud, by = "CEDULA")
+f.totales <- left_join(f.totales, t.costJudCast, by = "CEDULA")
+
  
 ## Almacén Vencido
 t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
@@ -385,9 +431,16 @@ f.totales <- data.frame(f.totales,
                                           na.rm = TRUE))
 
 ## Debe aportes
+debeAportes <- aggregate(x = select(f.movCapital, debe),
+                         by = select(f.movCapital, CEDULA),
+                         FUN = sum, na.rm = TRUE)
+
+f.totales <- left_join(f.totales, debeAportes, by = "CEDULA")
 
 ## Total deuda
-
+t.deuda <- rowSums(select(f.totales, cartera, intPend, intPendCast,
+                          costJud, costJudCast, debe), na.rm = TRUE)
+f.totales <- data.frame(f.totales, t.deuda)
 
 ## Aportes
 t.aportes <- data.frame(select(o0.vrCupo, CEDULA),

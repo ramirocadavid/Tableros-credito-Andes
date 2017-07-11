@@ -14,3 +14,6 @@ View(f.observaciones[f.observaciones$CEDULA == cc, ])
 
 # Disponible
 View(f.disponible[f.disponible$CEDULA == cc, ])
+
+# Totales
+View(f.totales[f.totales$CEDULA == cc, ])

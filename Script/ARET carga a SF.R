@@ -228,18 +228,22 @@ o2.vrCreditos <- aggregate(x = select(car_vigente_no6, vr.actual),
                            by = select(car_vigente_no6, CEDULA),
                            FUN = sum, na.rm = TRUE)
 
+names(o2.vrCreditos)[2] <- "Ordinario"
+
 # Fertilizante
 car_vigente_6 <- car_vigente[car_vigente$CODCREDITO == 6,]
 
 f2.vrCreditos <- aggregate(x = select(car_vigente_6, vr.actual), 
                            by = select(car_vigente_6, CEDULA),
                            FUN = sum, na.rm = TRUE)
+
 names(f2.vrCreditos)[2] <- "Fertilizante"
 
 # Almacen
 a2.vrCreditos <- aggregate(x = select(factalma.DBF, VALOR),
                            by = select(factalma.DBF, CEDULA),
                            FUN = sum, na.rm = TRUE)
+
 names(a2.vrCreditos)[2] <- "Almacen"
 
 # Agregar todos los valor creditos
@@ -252,31 +256,42 @@ vr.credito <- gather(vr.credito, "Tipo", "vr.credito", Ordinario:Almacen)
 f.disponible <- full_join(vr.cupo, vr.credito, by = c("CEDULA", "Tipo"))
 
 
-## Valor Disponible (actualizar con vrActualAfecta!!!!)
+## Valor Disponible
 
-# VrActualAfecta (pertenece a totales)
-noAfectaCu1 <- f.RelCartAsoc$NOAFECTACU == 1 & !is.na(f.RelCartAsoc$vr.actual)
+# VrActualAfecta (pertenece a totales pero se utiliza acá)
+vrActualAfecta <- ifelse(f.RelCartAsoc$NOAFECTACU == 0,
+                         0, f.RelCartAsoc$vr.actual)
 
-vrActualAfecta <- ifelse(noAfectaCu1 == FALSE,
-                         NA, f.RelCartAsoc$vr.actual)
+temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
+vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
+                            by = select(temp_vr.actual, CEDULA),
+                            FUN = sum, na.rm = TRUE)
 
 # pruebaNAC <- data.frame(f.RelCartAsoc$NOAFECTACU,
 #                         f.RelCartAsoc$vr.actual,
 #                         noAfectaCu1,
 #                         vrActualAfecta)
 
-temp_vr.actual <- data.frame(f.RelCartAsoc, vrActualAfecta)
-vrActualAfecta <- aggregate(x = select(temp_vr.actual, vrActualAfecta),
-                            by = select(temp_vr.actual, CEDULA),
-                            FUN = sum,
-                            na.rm = TRUE)
-
-## fkldjdñaj
+## Ordinario
+f.disponible <- left_join(f.disponible,
+                          select(vrActualAfecta, CEDULA, vrActualAfecta),
+                          by = "CEDULA")
 
 vr.disponible <- ifelse(f.disponible$Tipo == "Ordinario",
-                        f.disponible$vr.cupo - f.disponible$vr.credito,
-                        f.disponible$vr.cupo - f.disponible$vr.credito)
+                        ifelse(is.na(f.disponible$vr.cupo), 
+                               0, f.disponible$vr.cupo) -
+                             ifelse(is.na(f.disponible$vr.credito),
+                                    0, f.disponible$vr.credito) +
+                             ifelse(is.na(f.disponible$vrActualAfecta),
+                                    0, f.disponible$vrActualAfecta),
+                        ifelse(is.na(f.disponible$vr.cupo), 
+                               0, f.disponible$vr.cupo) -
+                             ifelse(is.na(f.disponible$vr.credito),
+                                    0, f.disponible$vr.credito))
 
+f.disponible <- data.frame(f.disponible, vr.disponible)
+
+f.disponible <- select(f.disponible, -matches("vrActualAfecta"))
 
 
 # 6. TOTALES --------------------------------------------------------------

@@ -439,7 +439,7 @@ f.totales <- left_join(f.totales, debeAportes, by = "CEDULA")
 
 ## Total deuda
 t.deuda <- rowSums(select(f.totales, cartera, intPend, intPendCast,
-                          costJud, costJudCast, debe), na.rm = TRUE)
+                          costJud, costJudCast, almacen, debe), na.rm = TRUE)
 f.totales <- data.frame(f.totales, t.deuda)
 
 ## Aportes

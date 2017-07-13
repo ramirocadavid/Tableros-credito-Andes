@@ -4,7 +4,7 @@ setwd("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/Delos
 setwd("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Tableros-credito-Andes/Datos")
 #Cédula de prueba
 ccs <- c(3417689, 21461147, 98630518, 3419167)
-cc <- ccs[4]
+cc <- ccs[1]
 
 # Relación cartera asociado
 View(f.RelCartAsoc[f.RelCartAsoc$CEDULA == cc & f.RelCartAsoc$estado == "Vigente", ])

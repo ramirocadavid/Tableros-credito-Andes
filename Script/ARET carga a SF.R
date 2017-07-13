@@ -465,7 +465,7 @@ f.totales <- left_join(f.totales, t.capital, by = "CEDULA")
 
 library(RForcecom)
 username <- "admin@andes.org"
-password <- "admgf2017*XQWRiDpPU6NzJC9Cmm185FF2"
+password <- "admgf2017#XQWRiDpPU6NzJC9Cmm185FF2"
 instanceURL <- "https://taroworks-8629.cloudforce.com/"
 apiVersion <- "36.0"
 session <- rforcecom.login(username, password, instanceURL, apiVersion)
@@ -486,6 +486,10 @@ batches_info <- rforcecom.createBulkBatch(session,
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
+# Suspender la ejecución del script por 5 minutos mientras se borran
+# registros existentes de créditos
+Sys.sleep(time = 60 * 5)
+
 # 8. CREAR PRODUCTORES NUEVOS EN SALESFORCE -------------------------------
 
 # ## Descargar c?dulas y IDs de objeto farmer
@@ -493,8 +497,8 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 # fields <- c("Id", "Documento_identidad__c")
 # productores.sf <- rforcecom.retrieve(session, objectName, fields)
 # names(productores.sf)[2] <- "CEDULA"
-# class(productores.sf$CEDULA)
-# #guardada en RDS como "productores_sf.RDS"
+
+#guardada en RDS como "productores_sf.RDS"
 # 
 # ## Identificar productores en masociados que no est?n en SF (farmers)
 # vars_masociados <- c("CEDASOCIAD", "NOMBRES", "APELLIDO1", "APELLIDO2")
@@ -557,13 +561,17 @@ f.totales <- inner_join(f.totales, productores.sf,
 # desc.credito_total <- rforcecom.getObjectDescription(session, "credito_Total__c")
 
 # Limpiar y renombrar variables f.totales por API names
-f.totales <- f.totales[, c(12, 1, 3:11)]
 
-names(f.totales) <- c("Farmer__c","Cedula__c",  "Cartera_Vencida__c",
+f.totales <- f.totales[, c(17, 1:16)]
+
+names(f.totales) <- c("Farmer__c", "Cedula__c",  "Cartera_Vencida__c",
                       "Cartera_vigente__c", "Total_cartera__c",
+                      "Interes_pendiente__c", "Inter_s_pendiente_castigado__c",
+                      "Costas_Judiciales__c", "Costas_Judiciales_castigadas__c",
                       "Almacen_vencido__c", "Almacen_vigente__c",
-                      "Total_almacen__c", "Aportes__c", "Revalorizacion__c",
-                      "Total_Capital__c")
+                      "Total_almacen__c", "Debe_Aportes__c",
+                      "Total_Deuda__c", "Aportes__c", 
+                      "Revalorizacion__c", "Total_Capital__c")
 
 f.totales <- f.totales[order(f.totales$Farmer__c), ]
 
@@ -579,23 +587,27 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# check on status of each batch
-batches_status <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.checkBatchStatus(session, 
-                                                         jobId=x$jobId, 
-                                                         batchId=x$id)
-                         })
-# get details on each batch
-batches_detail <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.getBatchDetails(session, 
-                                                        jobId=x$jobId, 
-                                                        batchId=x$id)
-                         })
+# # check on status of each batch
+# batches_status <- lapply(batches_info, 
+#                          FUN=function(x){
+#                               rforcecom.checkBatchStatus(session, 
+#                                                          jobId=x$jobId, 
+#                                                          batchId=x$id)
+#                          })
+# # get details on each batch
+# batches_detail <- lapply(batches_info, 
+#                          FUN=function(x){
+#                               rforcecom.getBatchDetails(session, 
+#                                                         jobId=x$jobId, 
+#                                                         batchId=x$id)
+#                          })
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
+# Suspender ejecución del script mientras se crean todos los registros de
+# Crédito total
+
+Sys.sleep(time = 60 * 10)
 
 # 10. CARGAR OBSERVACIONES ------------------------------------------------
 
@@ -690,47 +702,48 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 # 12. CARGAR DISPONIBLE ---------------------------------------------------
 
-# #### EN CONSTRUCCIÓN!!!!!!!!
-# ###
-# # Preparar datos
-# f.disponible$CEDULA <- as.factor(f.disponible$CEDULA)
-# f.disponible <- inner_join(f.disponible, credito.total,
-#                           by = c("CEDULA" = "Cedula__c"))
-# 
+# Preparar datos
+f.disponible$CEDULA <- as.factor(f.disponible$CEDULA)
+f.disponible <- inner_join(f.disponible, credito.total,
+                          by = c("CEDULA" = "Cedula__c"))
+
 # f.disponible <- select(f.disponible, -one_of(c("CEDULA", "REFERENCIA",
 #                                              "NOMALMACEN")))
-# 
-# names(f.disponible) <- c("credito_Total__c")
-# 
-# f.disponible <- f.disponible[order(f.disponible$credito_Total__c), ]
-# 
-# # Cargar datos
-# 
-# job_info <- rforcecom.createBulkJob(session,
-#                                     operation='insert', 
-#                                     object='credito_factalma__c')
-# 
-# batches_info <- rforcecom.createBulkBatch(session, 
-#                                           jobId=job_info$id, 
-#                                           f.almacCafe, 
-#                                           multiBatch = TRUE, 
-#                                           batchSize=500)
-# 
-# batches_status <- lapply(batches_info, 
+
+f.disponible <- select(f.disponible, -CEDULA)
+
+names(f.disponible) <- c("L_nea__c", "Valor_cupo__c", "Valor_cr_ditos__c",
+                         "Valor_disponible__c", "credito_Total__c")
+
+f.disponible <- f.disponible[order(f.disponible$credito_Total__c), ]
+
+# Cargar datos
+
+job_info <- rforcecom.createBulkJob(session,
+                                    operation='insert',
+                                    object='Disponible__c')
+
+batches_info <- rforcecom.createBulkBatch(session,
+                                          jobId=job_info$id,
+                                          f.disponible,
+                                          multiBatch = TRUE,
+                                          batchSize=500)
+
+# batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                               rforcecom.checkBatchStatus(session, 
-#                                                          jobId=x$jobId, 
+#                               rforcecom.checkBatchStatus(session,
+#                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
 # 
-# batches_detail <- lapply(batches_info, 
+# batches_detail <- lapply(batches_info,
 #                          FUN=function(x){
-#                               rforcecom.getBatchDetails(session, 
-#                                                         jobId=x$jobId, 
+#                               rforcecom.getBatchDetails(session,
+#                                                         jobId=x$jobId,
 #                                                         batchId=x$id)
 #                          })
-# 
-# close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
+
+close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 # 13. CARGAR DAPORTES (MOVCAPITAL) ----------------------------------------
 
@@ -743,7 +756,7 @@ f.movCapital <- select(f.movCapital, -one_of(c("CEDULA")))
 
 names(f.movCapital) <- c("PERIODO__c", "CAPINGRESO__c", "CAPANUAL__c",
                          "DESCPTMO__c", "CAPCAFE__c", "REVALORI__c",
-                         "KILCAFE__c","credito_Total__c")
+                         "KILCAFE__c", "DEBE__c", "credito_Total__c")
 
 f.movCapital <- f.movCapital[order(f.movCapital$credito_Total__c), ]
 
@@ -759,19 +772,19 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-batches_status <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.checkBatchStatus(session, 
-                                                         jobId=x$jobId, 
-                                                         batchId=x$id)
-                         })
-
-batches_detail <- lapply(batches_info, 
-                         FUN=function(x){
-                              rforcecom.getBatchDetails(session, 
-                                                        jobId=x$jobId, 
-                                                        batchId=x$id)
-                         })
+# batches_status <- lapply(batches_info, 
+#                          FUN=function(x){
+#                               rforcecom.checkBatchStatus(session, 
+#                                                          jobId=x$jobId, 
+#                                                          batchId=x$id)
+#                          })
+# 
+# batches_detail <- lapply(batches_info, 
+#                          FUN=function(x){
+#                               rforcecom.getBatchDetails(session, 
+#                                                         jobId=x$jobId, 
+#                                                         batchId=x$id)
+#                          })
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 

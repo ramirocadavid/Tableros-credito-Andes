@@ -1,17 +1,18 @@
+# # Importar datos (Andes) --------------------------------------------------
+# 
 # setwd("S:/DATOS")
 # 
-# # Importar datos ----------------------------------------------------------
-# 
-# archivos.dbf <- c("aso_mfincas.DBF", "car_castigada.DBF", "car_cosj.DBF", 
-#                   "car_cosj_castigada.DBF", "car_mcre.DBF", "car_pagos.DBF", 
+# archivos.dbf <- c("aso_mfincas.DBF", "car_castigada.DBF", "car_cosj.DBF",
+#                   "car_cosj_castigada.DBF", "car_mcre.DBF", "car_pagos.DBF",
 #                   "car_pendien.DBF", "car_pendien_castigada.DBF",
-#                   "car_vigente.DBF", "daportes.DBF", "factalma.DBF", 
-#                   "malmacen.DBF", "masociado.DBF", "mcuoingr.dbf", 
+#                   "car_vigente.DBF", "daportes.DBF", "factalma.DBF",
+#                   "malmacen.DBF", "masociado.DBF", "mcuoingr.dbf",
 #                   "mmunicipio.dbf" )
+
+# Importar datos (GF) --------------------------------------------------------
 
 setwd("Datos")
 
-# Importar datos ----------------------------------------------------------
 archivos.dbf <- list.files(pattern = "*.DBF|*.dbf")
 
 library(foreign)
@@ -25,12 +26,11 @@ for(i in seq_along(archivos.dbf)) {
 
 # 1. RELACIÓN CARTERA ASOCIADO -----------------------------------------------
 
-
 # 1.1. Informaci?n "Relación Cartera Asociado": CAR_VIGENTE
 
 ## Seleccionar variables de car_vigente y crear 'Relaci?n cartera asociado'
 vars.car_vigente <- c("CEDULA", "CODCREDITO", "NUMERO", "FECHACRE", "FECHAVEN",
-                      "VRCREDITO", "REFINANCIA", "MUNICIPIO")
+                      "VRCREDITO", "REFINANCIA", "REESTRUC", "MUNICIPIO")
 car_vigente <- car_vigente.DBF[, vars.car_vigente]
 
 ## Agregar código de municipio
@@ -60,6 +60,8 @@ sum.vrPagos <- aggregate(x = select(vr.pagos, CREDITO),
                          by = select(vr.pagos, id.car_pagos),
                          FUN = sum, na.rm = TRUE)
 names(sum.vrPagos) <- c("id.join", "vr.pagos")
+
+
 
 ## Prueba vr.pagos
 # pr.vr.pagos <- vr.pagos
@@ -123,9 +125,29 @@ car_castigada <- data.frame(car_castigada, estado)
 # 1.3. Concatenar car_vigente y car_castigada
 car_vigente <- select(car_vigente, -matches("id.join"))
 orden.car_vigente <- names(car_vigente)
+car_vigente <- data.frame(tipo.credito = rep("Cartera vigente",
+                                             nrow(car_vigente)),
+                          car_vigente)
+
 car_castigada <- car_castigada[, orden.car_vigente]
+car_castigada <- data.frame(tipo.credito = rep("Cartera castigada",
+                                               nrow(car_castigada)),
+                            car_castigada)
+
 f.RelCartAsoc <- rbind(car_vigente, car_castigada)
 
+## Refinanciado
+f.RelCartAsoc$REFINANCIA <- ifelse(is.na(f.RelCartAsoc$REFINANCIA) | 
+                                        f.RelCartAsoc$REFINANCIA == 0, NA,
+                       f.RelCartAsoc$REFINANCIA)
+
+## Reestructurado
+f.RelCartAsoc$REESTRUC <- ifelse(is.na(f.RelCartAsoc$REESTRUC) | 
+                                     f.RelCartAsoc$REESTRUC == 0, NA,
+                                f.RelCartAsoc$REESTRUC)
+
+# # 1.4. Eliminar registros que ya están pagos (vr.actual <= 0)
+# f.RelCartAsoc <- f.RelCartAsoc[f.RelCartAsoc$vr.actual > 0, ]
 
 
 # 2. ALMACENES DE CAFÉ ----------------------------------------------------
@@ -149,29 +171,52 @@ f.almacCafe <- left_join(f.almacCafe,
 # 3. MOVIMIENTO DETALLADO CAPITAL ASOCIADO --------------------------------
 
 ## Variables iniciales
-
 vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "DESCPTMO",
                      "CAPCAFE", "REVALORI", "KILCAFE")
 movCapital <- daportes.DBF[, vars.movCapital]
+f.movCapital <- daportes.DBF[, vars.movCapital]
 
 
-## Debe
+# ## Debe
+# 
+# ### Importar valores de las cuotas
+# cuota.asamblea <- read.csv("Cuota_Asamblea.csv")
+# precios <- select(cuota.asamblea, Anio, Vr..Cuota)
+# #Convertir a Kgs
+# precios$Vr..Cuota <- precios$Vr..Cuota / 12.5
+# 
+# ### Valor de la cuota a cada registro
+# f.movCapital <- left_join(movCapital, precios, by = c("PERIODO" = "Anio"))
+# 
+# ### Debe
+# debe <- ifelse(is.na(f.movCapital$Vr..Cuota), 0,
+#                f.movCapital$Vr..Cuota * 12.5) -
+#      ifelse(is.na(f.movCapital$aportes), 0, f.movCapital$aportes)
+# 
+# debe <- ifelse(debe < 0, 0, debe)
+# 
+# f.movCapital <- data.frame(f.movCapital, debe)
+# 
+# ### Eliminar variables que no se van a cargar
+# f.movCapital <- select(f.movCapital, -Vr..Cuota)
 
-library(data.table)
-
-f.movCapital <- setDT(movCapital)
-colsAgg <- c("CAPINGRE", "CAPANUAL", "DESCPTMO", "CAPCAFE",
-             "REVALORI", "KILCAFE")
-f.movCapital <- f.movCapital[, lapply(.SD, sum),
-                               by=.(CEDULA, PERIODO),
-                               .SDcols = colsAgg]
-f.movCapital <- setDF(f.movCapital)
-
-debe <- ifelse(80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8) > 0,
-               80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8),
-               0)
-
-f.movCapital <- data.frame(f.movCapital, debe)
+# ## ESTO PARA QUÉ SIRVE??????????? -> COMENTAR
+# library(data.table)
+# 
+# f.movCapital <- setDT(movCapital)
+# colsAgg <- c("CAPINGRE", "CAPANUAL", "DESCPTMO", "CAPCAFE",
+#              "REVALORI", "KILCAFE")
+# f.movCapital <- f.movCapital[, lapply(.SD, sum),
+#                                by=.(CEDULA, PERIODO),
+#                                .SDcols = colsAgg]
+# f.movCapital <- setDF(f.movCapital)
+# 
+# 
+# debe <- ifelse(80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8) > 0,
+#                80000 - (((f.movCapital$KILCAFE * 6000) * 0.01) * 0.8),
+#                0)
+# 
+# f.movCapital <- data.frame(f.movCapital, debe)
 
 
 ## Resultado 1 (Estas variables no están en los objetos, por el
@@ -195,6 +240,8 @@ f.observaciones <- f.observaciones[!is.na(f.observaciones$Observaciones), ]
 
 # 5. DISPONIBLE -----------------------------------------------------------
 
+# ESTA INFORMACIÓN NO SE INCLUIRÁ EN EL REPORTE
+
 ## Valor cupo
 
 # Ordinario
@@ -213,7 +260,7 @@ a2.vrCupo <- rowSums(o0.vrCupo[, 2:6], na.rm = TRUE)
 
 # Agregar todos los valor cupo
 vr.cupo <- data.frame(o0.vrCupo$CEDULA, o2.vrCupo, f2.vrCupo, a2.vrCupo)
-noms.disponible <- c("CEDULA", "Ordinario", "Fertilizante", "Almacen") 
+noms.disponible <- c("CEDULA", "Ordinario", "Fertilizante", "Almacen")
 names(vr.cupo) <- noms.disponible
 
 vr.cupo <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
@@ -224,7 +271,7 @@ vr.cupo <- gather(vr.cupo, "Tipo", "vr.cupo", Ordinario:Almacen)
 # Ordinario
 car_vigente_no6 <- car_vigente[car_vigente$CODCREDITO != 6,]
 
-o2.vrCreditos <- aggregate(x = select(car_vigente_no6, vr.actual), 
+o2.vrCreditos <- aggregate(x = select(car_vigente_no6, vr.actual),
                            by = select(car_vigente_no6, CEDULA),
                            FUN = sum, na.rm = TRUE)
 
@@ -233,7 +280,7 @@ names(o2.vrCreditos)[2] <- "Ordinario"
 # Fertilizante
 car_vigente_6 <- car_vigente[car_vigente$CODCREDITO == 6,]
 
-f2.vrCreditos <- aggregate(x = select(car_vigente_6, vr.actual), 
+f2.vrCreditos <- aggregate(x = select(car_vigente_6, vr.actual),
                            by = select(car_vigente_6, CEDULA),
                            FUN = sum, na.rm = TRUE)
 
@@ -278,13 +325,13 @@ f.disponible <- left_join(f.disponible,
                           by = "CEDULA")
 
 vr.disponible <- ifelse(f.disponible$Tipo == "Ordinario",
-                        ifelse(is.na(f.disponible$vr.cupo), 
+                        ifelse(is.na(f.disponible$vr.cupo),
                                0, f.disponible$vr.cupo) -
                              ifelse(is.na(f.disponible$vr.credito),
                                     0, f.disponible$vr.credito) +
                              ifelse(is.na(f.disponible$vrActualAfecta),
                                     0, f.disponible$vrActualAfecta),
-                        ifelse(is.na(f.disponible$vr.cupo), 
+                        ifelse(is.na(f.disponible$vr.cupo),
                                0, f.disponible$vr.cupo) -
                              ifelse(is.na(f.disponible$vr.credito),
                                     0, f.disponible$vr.credito))
@@ -360,8 +407,8 @@ t.intPendCast <- data.frame(t.intPendCast, intPendCast)
 t.intPendCast <- select(t.intPendCast, CEDULA, intPendCast)
 
 ### Joint a f.totales
-f.totales <- left_join(f.totales, t.intPend, by = "CEDULA")
-f.totales <- left_join(f.totales, t.intPendCast, by = "CEDULA")
+f.totales <- full_join(f.totales, t.intPend, by = "CEDULA")
+f.totales <- full_join(f.totales, t.intPendCast, by = "CEDULA")
 
 
 ## Costas Judiciales/castigadas
@@ -399,8 +446,8 @@ t.costJudCast <- data.frame(t.costJudCast, costJudCast)
 t.costJudCast <- select(t.costJudCast, CEDULA, costJudCast)
 
 ### Joint a f.totales
-f.totales <- left_join(f.totales, t.costJud, by = "CEDULA")
-f.totales <- left_join(f.totales, t.costJudCast, by = "CEDULA")
+f.totales <- full_join(f.totales, t.costJud, by = "CEDULA")
+f.totales <- full_join(f.totales, t.costJudCast, by = "CEDULA")
 
  
 ## Almacén Vencido
@@ -411,7 +458,7 @@ t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe ==
                           FUN = sum,
                           na.rm = TRUE)
 names(t.almVencido)[2] <- "almac.vencida"
-f.totales <- left_join(f.totales, t.almVencido, by = "CEDULA")
+f.totales <- full_join(f.totales, t.almVencido, by = "CEDULA")
 
 ## Almacén Vigente
 t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vigente",],
@@ -421,7 +468,7 @@ t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe ==
                           FUN = sum,
                           na.rm = TRUE)
 names(t.almVigente)[2] <- "almac.vigente"
-f.totales <- left_join(f.totales, t.almVigente, by = "CEDULA")
+f.totales <- full_join(f.totales, t.almVigente, by = "CEDULA")
 
 ## Total almacén
 f.totales <- data.frame(f.totales,
@@ -431,33 +478,91 @@ f.totales <- data.frame(f.totales,
                                           na.rm = TRUE))
 
 ## Debe aportes
-debeAportes <- aggregate(x = select(f.movCapital, debe),
+debeAportes <- aggregate(x = select(f.movCapital, CAPANUAL),
                          by = select(f.movCapital, CEDULA),
                          FUN = sum, na.rm = TRUE)
 
-f.totales <- left_join(f.totales, debeAportes, by = "CEDULA")
+f.totales <- full_join(f.totales, debeAportes, by = "CEDULA")
 
 ## Total deuda
 t.deuda <- rowSums(select(f.totales, cartera, intPend, intPendCast,
-                          costJud, costJudCast, almacen, debe), na.rm = TRUE)
+                          costJud, costJudCast, almacen, CAPANUAL), na.rm = TRUE)
 f.totales <- data.frame(f.totales, t.deuda)
 
-## Aportes
-t.aportes <- data.frame(select(o0.vrCupo, CEDULA),
-                      aportes = rowSums(o0.vrCupo[, 2:5], na.rm = TRUE))
+## Disponible aportes
+t.aportes <- aggregate(x = select(f.movCapital, CAPCAFE), 
+                       by = select(f.movCapital, CEDULA),
+                       FUN = sum, na.rm = TRUE)
 
-f.totales <- left_join(f.totales, t.aportes, by = "CEDULA")
+t.aportes$CAPCAFE <- t.aportes$CAPCAFE * 5
+names(t.aportes)[2] <- "disponibleAportes"
+
+f.totales <- full_join(f.totales, t.aportes, by = "CEDULA")
+
+## Disponible ingresos
+anio.actual <- as.integer(format(Sys.Date(), "%Y"))
+anio.anterior <- anio.actual - 1
+
+cuota.asamblea <- read.csv("Cuota_Asamblea.csv")
+precios <- select(cuota.asamblea, Anio, Vr..Cuota)
+#Convertir a Kgs
+precios$Vr..Cuota <- precios$Vr..Cuota / 12.5
+
+precio.anio.ant <- precios$Vr..Cuota[precios$Anio == anio.anterior]
+
+movCapital.anio.ant <- f.movCapital[f.movCapital$PERIODO == anio.anterior, ]
+
+t.disp.ingresos <- (movCapital.anio.ant$KILCAFE * precio.anio.ant) / 2
+movCapital.anio.ant <- data.frame(movCapital.anio.ant,
+                                  t.disp.ingresos)
+
+f.totales <- full_join(f.totales, 
+                       select(movCapital.anio.ant, CEDULA, t.disp.ingresos),
+                       by = "CEDULA")
+
+
+## Saldo obligaciones actuales: suma de todos los créditos vigentes
+
+# Agregar saldos por cédula
+cred.vigentes <- f.RelCartAsoc[f.RelCartAsoc$tipo.credito == "Cartera vigente", ]
+t_oblig.actuales <- aggregate(x = select(cred.vigentes, vr.actual),
+                              by = select(cred.vigentes, CEDULA),
+                              FUN = sum, na.rm = TRUE)
+# Adicionar a totales
+names(t_oblig.actuales)[2] <- "saldo.oblig.actuales"
+f.totales <- full_join(f.totales, t_oblig.actuales, by = "CEDULA")
+
+
+# Disponible actual por aportes 
+# = disp.aportes - saldoObligActuales (solo saldo, no intereses)
+f.totales <- data.frame(f.totales,
+                        disp.actual.aportes = 
+                             ifelse(is.na(f.totales$disponibleAportes), 0,
+                                    f.totales$disponibleAportes) -
+                             ifelse(is.na(f.totales$saldo.oblig.actuales), 0,
+                                    f.totales$saldo.oblig.actuales))
+                              
+
+# Disponible actual por ingresos 
+# = disp.ingresos - saldoObligActuales
+f.totales <- data.frame(f.totales,
+                        disp.actual.ingresos = 
+                             ifelse(is.na(f.totales$t.disp.ingresos), 0,
+                                    f.totales$t.disp.ingresos) -
+                             ifelse(is.na(f.totales$saldo.oblig.actuales), 0,
+                                    f.totales$saldo.oblig.actuales))
+
 
 ## Revalorización
 t.revalori <- data.frame(select(o0.vrCupo, CEDULA),
                         revalori = o0.vrCupo[, 6])
-f.totales <- left_join(f.totales, t.revalori, by = "CEDULA")
+f.totales <- full_join(f.totales, t.revalori, by = "CEDULA")
 
 ## Capital
 t.capital <- data.frame(select(o0.vrCupo, CEDULA),
                         capital = rowSums(o0.vrCupo[, 2:6], na.rm = TRUE))
 
-f.totales <- left_join(f.totales, t.capital, by = "CEDULA")
+f.totales <- full_join(f.totales, t.capital, by = "CEDULA")
 
 
 
@@ -562,16 +667,18 @@ f.totales <- inner_join(f.totales, productores.sf,
 
 # Limpiar y renombrar variables f.totales por API names
 
-f.totales <- f.totales[, c(17, 1:16)]
+f.totales <- select(f.totales, -one_of("car.vencida", "car.vigente", "cartera",
+                                        "intPend", "intPendCast", "costJud", 
+                                        "costJudCast", "t.deuda", "CAPANUAL",
+                                        "revalori", "capital"))
 
-names(f.totales) <- c("Farmer__c", "Cedula__c",  "Cartera_Vencida__c",
-                      "Cartera_vigente__c", "Total_cartera__c",
-                      "Interes_pendiente__c", "Inter_s_pendiente_castigado__c",
-                      "Costas_Judiciales__c", "Costas_Judiciales_castigadas__c",
-                      "Almacen_vencido__c", "Almacen_vigente__c",
-                      "Total_almacen__c", "Debe_Aportes__c",
-                      "Total_Deuda__c", "Aportes__c", 
-                      "Revalorizacion__c", "Total_Capital__c")
+names(f.totales) <- c("Cedula__c", "Almacen_vencido__c", "Almacen_vigente__c",
+                      "Total_almacen__c",
+                      "Disponible_aportes__c",
+                      "Disponible_ingresos__c", 
+                      "Saldo_obligaciones_actuales__c", 
+                      "Disponible_actual_por_aportes__c",
+                      "Disponible_actual_por_ingresos__c", "Farmer__c")
 
 f.totales <- f.totales[order(f.totales$Farmer__c), ]
 
@@ -587,11 +694,11 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# # check on status of each batch
-# batches_status <- lapply(batches_info, 
+# check on status of each batch
+# batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                               rforcecom.checkBatchStatus(session, 
-#                                                          jobId=x$jobId, 
+#                               rforcecom.checkBatchStatus(session,
+#                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
 # # get details on each batch
@@ -655,8 +762,6 @@ batches_info <- rforcecom.createBulkBatch(session,
 #                          })
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
-
-
 # 11. CARGAR FACTALMA -----------------------------------------------------
 
 # Preparar datos
@@ -664,11 +769,11 @@ f.almacCafe$CEDULA <- as.factor(f.almacCafe$CEDULA)
 f.almacCafe <- inner_join(f.almacCafe, credito.total,
                               by = c("CEDULA" = "Cedula__c"))
 
-f.almacCafe <- select(f.almacCafe, -one_of(c("CEDULA", "REFERENCIA",
-                                            "NOMALMACEN")))
+f.almacCafe <- select(f.almacCafe, -one_of(c("CEDULA", "NOMALMACEN")))
 
-names(f.almacCafe) <- c("ALMACEN__c", "FECHA__c", "FECVEN__c",
-                        "VALOR__c", "Estado_o__c", "credito_Total__c")
+names(f.almacCafe) <- c("ALMACEN__c", "REFERENCIA__c", "FECHA__c",
+                        "FECVEN__c", "VALOR__c", "Estado_o__c",
+                        "credito_Total__c")
 
 f.almacCafe <- f.almacCafe[order(f.almacCafe$credito_Total__c), ]
 
@@ -684,10 +789,10 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# batches_status <- lapply(batches_info, 
+# batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                               rforcecom.checkBatchStatus(session, 
-#                                                          jobId=x$jobId, 
+#                               rforcecom.checkBatchStatus(session,
+#                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
 # 
@@ -756,7 +861,7 @@ f.movCapital <- select(f.movCapital, -one_of(c("CEDULA")))
 
 names(f.movCapital) <- c("PERIODO__c", "CAPINGRESO__c", "CAPANUAL__c",
                          "DESCPTMO__c", "CAPCAFE__c", "REVALORI__c",
-                         "KILCAFE__c", "DEBE__c", "credito_Total__c")
+                         "KILCAFE__c", "credito_Total__c")
 
 f.movCapital <- f.movCapital[order(f.movCapital$credito_Total__c), ]
 
@@ -798,8 +903,9 @@ f.RelCartAsoc <- inner_join(f.RelCartAsoc, credito.total,
 f.RelCartAsoc <- select(f.RelCartAsoc, -one_of(c("CEDULA", "MUNICIPIO",
                                                  "NOAFECTACU")))
 
-names(f.RelCartAsoc) <- c("CODCREDITO__c", "NUMERO__c", "FECHACRE__c",
-                          "FECHAVEN__c", "VRCREDITO__c", "REFINANCIA__c",
+names(f.RelCartAsoc) <- c("Tipo_de_cr_dito__c", "CODCREDITO__c", "NUMERO__c",
+                          "FECHACRE__c", "FECHAVEN__c", "VRCREDITO__c",
+                          "REFINANCIA__c", "Reestructurado__c",
                           "DESCREDITO__c", "VRPAGOS__c", "VRACTUAL__c",
                           "Estado__c", "credito_Total__c")
 

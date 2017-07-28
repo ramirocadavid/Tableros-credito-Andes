@@ -1,14 +1,20 @@
+# Tableros
+# https://taroworks-8629--c.na30.visual.force.com/apex/Credito_EstadoAsociado?sfdc.tabName=01r36000000qs7a
+
 # Directorio antiguo
 setwd("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Archivos antiguos/Datos")
 #Directorio actualizado
 setwd("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Tableros-credito-Andes/Datos")
+
 #Cédula de prueba
-ccs <- c(3417689, 98630518, 3419167, 21461147)
+ccs <- c(3417689, 98630518, 3419167, 21461147) #pantallazos 1
+ccs <- c(21551811) #pantallazos 2
+ccs <- c(10195996, 15526383)
 cc <- ccs[1]
 
 # Relación cartera asociado
-View(f.RelCartAsoc[f.RelCartAsoc$CEDULA == cc & f.RelCartAsoc$estado == "Vigente", ])
 View(car_vigente.DBF[car_vigente.DBF$CEDULA == cc, ])
+View(f.RelCartAsoc[f.RelCartAsoc$CEDULA == cc & f.RelCartAsoc$estado == "Vigente", ])
 View(car_pagos.DBF[car_pagos.DBF$CEDULA == cc, ])
 View(car_pagos.DBF[car_pagos.DBF$CEDULA == cc & 
                         car_pagos.DBF$NUMEROCRE == 36158, ])

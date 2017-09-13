@@ -1,23 +1,21 @@
-# # Importar datos (Andes) --------------------------------------------------
-# 
-# setwd("S:/DATOS")
-# 
-# archivos.dbf <- c("aso_mfincas.DBF", "car_castigada.DBF", "car_cosj.DBF",
-#                   "car_cosj_castigada.DBF", "car_mcre.DBF", "car_pagos.DBF",
-#                   "car_pendien.DBF", "car_pendien_castigada.DBF",
-#                   "car_vigente.DBF", "daportes.DBF", "factalma.DBF",
-#                   "malmacen.DBF", "masociado.DBF", "mcuoingr.dbf",
-#                   "mmunicipio.dbf" )
+# 0. IMPORTAR DATOS --------------------------------------------------
 
-# Importar datos (GF) --------------------------------------------------------
+# Definir directorio con archivos de SIIA 
+setwd("S:/DATOS")
 
-setwd("Datos")
+# Lista de archivos a utilizar
+archivos.dbf <- c("car_castigada.DBF", "car_cosj.DBF",
+                  "car_cosj_castigada.DBF", "car_mcre.DBF", "car_pagos.DBF",
+                  "car_pendien.DBF", "car_pendien_castigada.DBF",
+                  "car_vigente.DBF", "daportes.DBF", "factalma.DBF",
+                  "malmacen.DBF", "masociado.DBF", "mcuoingr.dbf",
+                  "mmunicipio.dbf", "maportes.DBF" )
 
-archivos.dbf <- list.files(pattern = "*.DBF|*.dbf")
-
+# Librería para leer archivos .dbf (foreign) y manipular objetos (dplyr)
 library(foreign)
 library(dplyr)
 
+# Importar datos
 for(i in seq_along(archivos.dbf)) {
      assign(archivos.dbf[i], read.dbf(archivos.dbf[i]))
      assign(archivos.dbf[i], select(get(archivos.dbf[i]),
@@ -30,7 +28,8 @@ for(i in seq_along(archivos.dbf)) {
 
 ## Seleccionar variables de car_vigente y crear 'Relaci?n cartera asociado'
 vars.car_vigente <- c("CEDULA", "CODCREDITO", "NUMERO", "FECHACRE", "FECHAVEN",
-                      "VRCREDITO", "REFINANCIA", "REESTRUC", "MUNICIPIO")
+                      "VRCREDITO", "REFINANCIA", "REESTRUC", "MUNICIPIO",
+                      "BORRADOLOG")
 car_vigente <- car_vigente.DBF[, vars.car_vigente]
 
 ## Agregar código de municipio
@@ -56,12 +55,11 @@ vr.pagos <- car_pagos.DBF[, c("CEDULA", "CODCREDITO",
 id.car_pagos <- paste(vr.pagos[, 1], vr.pagos[, 2], vr.pagos[, 3])
 id.car_pagos <- as.factor(id.car_pagos)
 vr.pagos <- data.frame(id.car_pagos, vr.pagos)
+
 sum.vrPagos <- aggregate(x = select(vr.pagos, CREDITO),
                          by = select(vr.pagos, id.car_pagos),
                          FUN = sum, na.rm = TRUE)
 names(sum.vrPagos) <- c("id.join", "vr.pagos")
-
-
 
 ## Prueba vr.pagos
 # pr.vr.pagos <- vr.pagos
@@ -85,6 +83,7 @@ car_vigente <- left_join(car_vigente, sum.vrPagos, by = "id.join")
 vr.actual <- car_vigente$VRCREDITO - ifelse(is.na(car_vigente$vr.pagos),
                                             0,
                                             car_vigente$vr.pagos)
+vr.actual <- ifelse(vr.actual < 0, 0, vr.actual)
      
 
 fecha <- Sys.Date()
@@ -92,11 +91,16 @@ estado <- ifelse(car_vigente$FECHAVEN < fecha, "Vencido", "Vigente")
 
 car_vigente <- data.frame(car_vigente, vr.actual, estado)
 
+# Eliminar las que están en car_castigada
+car_vigente <- anti_join(car_vigente, car_castigada.DBF,
+                         by = "CEDULA")
+
 
 # 1.2. Informaci?n "Relaci?n Cartera Asociado": CAR_CASTIGADA
 
 ## Seleccionar variables de car_vigente y crear 'Relaci?n cartera asociado'
-vars.car_castigada <- c(vars.car_vigente, "VALORCASTI")
+vars.car_castigada <- c(vars.car_vigente[vars.car_vigente != "BORRADOLOG"],
+                        "VALORCASTI")
 car_castigada <- car_castigada.DBF[, vars.car_castigada]
 
 ## Agregar código de municipio
@@ -114,6 +118,7 @@ car_castigada <- left_join(car_castigada, car_mcre.DBF[, c("CODCREDITO",
 vr.pagos <- car_castigada$VRCREDITO - ifelse(is.na(car_castigada$VALORCASTI),
                                              0,
                                              car_castigada$VALORCASTI)
+
 car_castigada <- data.frame(car_castigada, vr.pagos)
 names(car_castigada)[names(car_castigada) == "VALORCASTI"] <- "vr.actual"
 
@@ -123,7 +128,15 @@ car_castigada <- data.frame(car_castigada, estado)
 
 
 # 1.3. Concatenar car_vigente y car_castigada
+
+# Mover variable BORRADOLOG en car_vigente para el final y eliminar id.join
+car_vigente <- select(car_vigente, -BORRADOLOG, BORRADOLOG)
 car_vigente <- select(car_vigente, -matches("id.join"))
+
+# Agregar variable BORRADOLOG en car_castigada con valor 2
+car_castigada <- data.frame(car_castigada,
+                            BORRADOLOG = rep(2, nrow(car_castigada)))
+
 orden.car_vigente <- names(car_vigente)
 car_vigente <- data.frame(tipo.credito = rep("Cartera vigente",
                                              nrow(car_vigente)),
@@ -136,19 +149,21 @@ car_castigada <- data.frame(tipo.credito = rep("Cartera castigada",
 
 f.RelCartAsoc <- rbind(car_vigente, car_castigada)
 
-## Refinanciado
+## Refinanciado: reemplazar 0 por NA
 f.RelCartAsoc$REFINANCIA <- ifelse(is.na(f.RelCartAsoc$REFINANCIA) | 
                                         f.RelCartAsoc$REFINANCIA == 0, NA,
-                       f.RelCartAsoc$REFINANCIA)
+                                   f.RelCartAsoc$REFINANCIA)
 
-## Reestructurado
+## Reestructurado: reemplazar 0 por NA
 f.RelCartAsoc$REESTRUC <- ifelse(is.na(f.RelCartAsoc$REESTRUC) | 
-                                     f.RelCartAsoc$REESTRUC == 0, NA,
-                                f.RelCartAsoc$REESTRUC)
+                                      f.RelCartAsoc$REESTRUC == 0, NA,
+                                 f.RelCartAsoc$REESTRUC)
 
-# # 1.4. Eliminar registros que ya están pagos (vr.actual <= 0)
-# f.RelCartAsoc <- f.RelCartAsoc[f.RelCartAsoc$vr.actual > 0, ]
-
+# # Eliminar registros que no están vigentes (BORRADOLOG == 1 o 2)
+# f.RelCartAsoc <- f.RelCartAsoc[is.na(f.RelCartAsoc$BORRADOLOG) |
+#                                     f.RelCartAsoc$BORRADOLOG == 0, ]
+# # Eliminar variable BORRADOLOG
+# f.RelCartAsoc <- select(f.RelCartAsoc, -BORRADOLOG)
 
 # 2. ALMACENES DE CAFÉ ----------------------------------------------------
 
@@ -170,15 +185,29 @@ f.almacCafe <- left_join(f.almacCafe,
 
 # 3. MOVIMIENTO DETALLADO CAPITAL ASOCIADO --------------------------------
 
-## Variables iniciales
+# Seleccionar Variables iniciales
 vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "DESCPTMO",
                      "CAPCAFE", "REVALORI", "KILCAFE")
 movCapital <- daportes.DBF[, vars.movCapital]
 f.movCapital <- daportes.DBF[, vars.movCapital]
 
+# Seleccionar datos de maportes
+vars.maportes  <- c("PERIODO", "FECHA", "CAPITAL", "SOLIDARI")
+# Limpiar datos de maportes (solo un valor por año)
+maportes1 <- maportes.DBF[maportes.DBF$PERIODO <= 1993, ]
 
-# ## Debe
 # 
+maportes <- maportes.dbf[grepl("12-31", maportes.dbf$FECHA), vars.maportes ]
+
+# f.movCapital <- left_join(daportes, maportes, by = "CEDULA" &/O "PERIODO"
+#                        &/O "Municipio????")
+# If (capital, solidari, capanual, solanual, capcafe, solcafe == NA, 0)
+# debe <- (f.movCapital$capital + f.movCapital$solidari) -
+#         (f.movCapital$capanual + f.movCapital$solanual
+#         +f.movCapital$capcafe + f.movCapital$solcafe)
+# f.movCapital <- data.frame(f.movCapital, debe)
+# Validar con tres casos
+
 # ### Importar valores de las cuotas
 # cuota.asamblea <- read.csv("Cuota_Asamblea.csv")
 # precios <- select(cuota.asamblea, Anio, Vr..Cuota)
@@ -451,6 +480,59 @@ f.totales <- full_join(f.totales, t.costJudCast, by = "CEDULA")
 
  
 ## Almacén Vencido
+
+# ELIMINAR EL 1 SOBRANTE DE LAS CÉDULAS
+
+## Crear vector con todas las cédulas de f.totales y de SF
+library(RForcecom)
+username <- "admin@andes.org"
+password <- "admgf2017#XQWRiDpPU6NzJC9Cmm185FF2"
+session <- rforcecom.login(username, password)
+
+cc.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c",
+                            "Documento_identidad__c")
+cc.sf <- cc.sf$Documento_identidad__c
+cc.sf <- cc.sf[!is.na(cc.sf)]
+cc.sf <- as.character(cc.sf)
+cc.tot <- as.character(f.totales$CEDULA)
+
+cc.tsf <- c(cc.sf, cc.tot)
+cc.tsf <- gsub("[^0-9]", "", cc.tsf)
+cc.tsf <- unique(cc.tsf)
+cc.tsf <- as.numeric(cc.tsf)
+
+rforcecom.logout(session)
+
+## Crear vector que contiene ccs con todos los caracteres y con todos menos
+## el último
+cc_1 = as.numeric(substr(as.character(f.almacCafe$CEDULA),
+                         1,
+                         nchar(f.almacCafe$CEDULA) - 1))
+f.almacCafe <- data.frame(f.almacCafe, cc_1)
+
+## Todas las cédulas de f.almacCafe que no encuentre en cc.tsf pero
+## que sí encuentre al eliminar el último dígito, eliminar el último
+## dígito
+for (i in 1:nrow(f.almacCafe)) {
+     if (f.almacCafe$CEDULA[i] %in% cc.tsf) {
+     } else {
+          if (f.almacCafe$cc_1[i] %in% cc.tsf) {
+               f.almacCafe$CEDULA[i] <- f.almacCafe$cc_1[i]
+          }
+     }
+}
+
+# # Prueba
+# 155222721 %in% f.almacCafe$CEDULA #debería dar FALSE
+# 15522272 %in% f.almacCafe$CEDULA #debería dar TRUE
+# 155255001 %in% f.almacCafe$CEDULA #debería dar FALSE
+# 15525500 %in% f.almacCafe$CEDULA #debería dar TRUE
+# 571227 %in% f.almacCafe$CEDULA #debería dar TRUE
+
+f.almacCafe <- select(f.almacCafe, -cc_1)
+
+
+# AGREGAR POR CÉDULA
 t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
                                      VALOR),
                           by = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vencida",],
@@ -458,7 +540,9 @@ t.almVencido <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe ==
                           FUN = sum,
                           na.rm = TRUE)
 names(t.almVencido)[2] <- "almac.vencida"
+
 f.totales <- full_join(f.totales, t.almVencido, by = "CEDULA")
+ 
 
 ## Almacén Vigente
 t.almVigente <- aggregate(x = select(f.almacCafe[f.almacCafe$estado.almacCafe == "Vigente",],
@@ -597,50 +681,76 @@ Sys.sleep(time = 60 * 5)
 
 # 8. CREAR PRODUCTORES NUEVOS EN SALESFORCE -------------------------------
 
-# ## Descargar c?dulas y IDs de objeto farmer
-# objectName <- "gfmAg__Farmer__c"
-# fields <- c("Id", "Documento_identidad__c")
-# productores.sf <- rforcecom.retrieve(session, objectName, fields)
-# names(productores.sf)[2] <- "CEDULA"
+# Flow https://taroworks-8629.cloudforce.com/servlet/servlet.Integration?ic=1&linkToken=VmpFPSxNakF4Tnkwd09TMHdNbFF4TlRvMU5qb3pPQzQzTlRGYSx2OVJrSzJTM1pFN09GdEx6SGp6Q0pILFlXWmtNR0po&lid=01r36000000SYy4
+# Información de mapeo de variables en documento "Campos para creacion
+# de productores"
 
-#guardada en RDS como "productores_sf.RDS"
-# 
-# ## Identificar productores en masociados que no est?n en SF (farmers)
-# vars_masociados <- c("CEDASOCIAD", "NOMBRES", "APELLIDO1", "APELLIDO2")
-# productores.and <- masociado.DBF[ , vars_masociados]
-# names(productores.and) <- c("Documento_identidad__c", "nombres", "apellido1",
-#                        "apellido2")
-# productores.and$Documento_identidad__c <- as.factor(productores.and$Documento_identidad__c)
-# 
-# library(dplyr)
-# productores.no.sf <- anti_join(productores.and, productores.sf)
+## Descargar c?dulas y IDs de objeto farmer
+objectName <- "gfmAg__Farmer__c"
+fields <- c("Id", "Documento_identidad__c")
+productores.sf <- rforcecom.retrieve(session, objectName, fields)
+names(productores.sf)[2] <- "CEDASOCIAD"
 
-## Crear contactos de los farmers (Nombre, Apellido, CC)
-# job_info <- rforcecom.createBulkJob(session, 
-#                                     operation='insert', 
-#                                     object='RForcecom__c')
+## Identificar productores activos en masociados que no est?n en SF (farmers)
+
+# Seleccionar variables de masociado a cargar en Salesforce y productores
+# activos
+vars.masociado <- c("CEDASOCIAD", "NOMBRE1", "NOMBRE2",
+                    "APELLIDO1", "APELLIDO2")
+asoc.activos <- masociado.DBF[is.na(masociado.DBF$FECHARET),
+                                   vars.masociado]
+# Crear variable de nombres y apellidos pegando NOMBRE1 con NOMBRE2 y
+# APELLIDO1 con APELLIDO2
+asoc.activos <- data.frame(asoc.activos,
+                           Nombres = paste(asoc.activos$NOMBRE1,
+                                           asoc.activos$NOMBRE2,
+                                           sep = " "),
+                           Apellidos = paste(asoc.activos$APELLIDO1,
+                                             asoc.activos$APELLIDO2,
+                                             sep = " "))
+# Eliminar NAs creados por paste
+asoc.activos$Nombres <- gsub(" NA|NA ", "", asoc.activos$Nombres)
+asoc.activos$Apellidos <- gsub(" NA", "", asoc.activos$Apellidos)
+# Eliminar nombres y apellidos
+asoc.activos <- select(asoc.activos, CEDASOCIAD, Nombres, Apellidos)
+
+# Identificar productores activos que no están en SF
+asoc.activos$CEDASOCIAD <- as.character(asoc.activos$CEDASOCIAD)
+productores.sf$CEDASOCIAD <- as.character(productores.sf$CEDASOCIAD)
+asoc.activos.nosf <- anti_join(asoc.activos, productores.sf,
+                               by = "CEDASOCIAD")
+
+
+# CREAR REGISTROS DE CONTACT
 # 
-# batches_info <- rforcecom.createBulkBatch(session, 
-#                                           jobId=job_info$id, 
-#                                           data, 
-#                                           multiBatch = TRUE, 
-#                                           batchSize=200)
-# 
-# batches_status <- lapply(batches_info, 
+# Cambiar nombres por API names
+names(asoc.activos.nosf) <- c("gfsurveys__mobilesurveys_Id__c", "FirstName",
+                              "LastName")
+# Crear registros en Contact
+job_info <- rforcecom.createBulkJob(session,
+                                    operation='insert',
+                                    object='Contact')
+batches_info <- rforcecom.createBulkBatch(session,
+                                          jobId=job_info$id,
+                                          # asoc.activos.nosf[253,],
+                                          multiBatch = TRUE,
+                                          batchSize=500)
+# # Ver estado de carga
+# batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                                rforcecom.checkBatchStatus(session, 
-#                                                           jobId=x$jobId, 
+#                                rforcecom.checkBatchStatus(session,
+#                                                           jobId=x$jobId,
 #                                                           batchId=x$id)
 #                          })
-# 
-# batches_detail <- lapply(batches_info, 
+# # Ver detalles de carga
+# batches_detail <- lapply(batches_info,
 #                          FUN=function(x){
-#                                rforcecom.getBatchDetails(session, 
-#                                                          jobId=x$jobId, 
+#                                rforcecom.getBatchDetails(session,
+#                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
-# 
-# close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
+
+close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 # 
 # ## Crear persons
 # 
@@ -651,12 +761,10 @@ Sys.sleep(time = 60 * 5)
 # 9. CARGAR CRÉDITO TOTAL -------------------------------------------------
 
 # Descargar farmers de Salesforce (cédula y id)
-
 fields <- c("Id", "Documento_identidad__c")
 productores.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c", fields)
 
 # Agregar ID de Salesforce a f.totales
-
 f.totales$CEDULA <- as.factor(f.totales$CEDULA)
 f.totales <- inner_join(f.totales, productores.sf,
                        by = c("CEDULA" = "Documento_identidad__c"))
@@ -907,7 +1015,7 @@ names(f.RelCartAsoc) <- c("Tipo_de_cr_dito__c", "CODCREDITO__c", "NUMERO__c",
                           "FECHACRE__c", "FECHAVEN__c", "VRCREDITO__c",
                           "REFINANCIA__c", "Reestructurado__c",
                           "DESCREDITO__c", "VRPAGOS__c", "VRACTUAL__c",
-                          "Estado__c", "credito_Total__c")
+                          "Estado__c", "Borrado_l_gico__c", "credito_Total__c")
 
 f.RelCartAsoc <- f.RelCartAsoc[order(f.RelCartAsoc$credito_Total__c), ]
 
@@ -940,3 +1048,15 @@ batches_info <- rforcecom.createBulkBatch(session,
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 
+
+# 15. PRUEBA DE EJECUCIÓN -------------------------------------------------
+
+setwd("C:/Users/Ramiro/Desktop/Prueba scheduleR")
+prueba <- as.vector(read.csv("prueba_scheduleR.csv")[, 1])
+
+prueba[length(prueba) + 1] <- as.character(Sys.time())
+
+write.csv(prueba, "prueba_scheduleR.csv", row.names = FALSE)
+
+# Cargar objetos importados (.dbf) guardados para pruebas
+load("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/LAC/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Tableros-credito-Andes/Datos/29 agosto 2017/data.RData")

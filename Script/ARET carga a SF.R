@@ -696,7 +696,7 @@ names(productores.sf)[2] <- "CEDASOCIAD"
 # Seleccionar variables de masociado a cargar en Salesforce y productores
 # activos
 vars.masociado <- c("CEDASOCIAD", "NOMBRE1", "NOMBRE2",
-                    "APELLIDO1", "APELLIDO2")
+                    "APELLIDO1", "APELLIDO2", "CELULAR")
 asoc.activos <- masociado.DBF[is.na(masociado.DBF$FECHARET),
                                    vars.masociado]
 # Crear variable de nombres y apellidos pegando NOMBRE1 con NOMBRE2 y
@@ -712,51 +712,185 @@ asoc.activos <- data.frame(asoc.activos,
 asoc.activos$Nombres <- gsub(" NA|NA ", "", asoc.activos$Nombres)
 asoc.activos$Apellidos <- gsub(" NA", "", asoc.activos$Apellidos)
 # Eliminar nombres y apellidos
-asoc.activos <- select(asoc.activos, CEDASOCIAD, Nombres, Apellidos)
+asoc.activos <- select(asoc.activos, CEDASOCIAD, Nombres, Apellidos, CELULAR)
 
 # Identificar productores activos que no están en SF
 asoc.activos$CEDASOCIAD <- as.character(asoc.activos$CEDASOCIAD)
 productores.sf$CEDASOCIAD <- as.character(productores.sf$CEDASOCIAD)
 asoc.activos.nosf <- anti_join(asoc.activos, productores.sf,
                                by = "CEDASOCIAD")
+# Eliminar cédulas = 0
+asoc.activos.nosf <- asoc.activos.nosf[asoc.activos.nosf$CEDASOCIAD != 0, ]
+# Eliminar duplicados
+asoc.activos.nosf <- asoc.activos.nosf[!duplicated(asoc.activos.nosf$CEDASOCIAD), ] 
 
 
-# CREAR REGISTROS DE CONTACT
-# 
+# CARGAR CONTACTS
+
 # Cambiar nombres por API names
 names(asoc.activos.nosf) <- c("gfsurveys__mobilesurveys_Id__c", "FirstName",
-                              "LastName")
-# Crear registros en Contact
+                              "LastName", "MobilePhone")
+# Crear trabajo para cargar Persons
 job_info <- rforcecom.createBulkJob(session,
                                     operation='insert',
                                     object='Contact')
+# Cargar datos
 batches_info <- rforcecom.createBulkBatch(session,
                                           jobId=job_info$id,
-                                          # asoc.activos.nosf[253,],
+                                          asoc.activos.nosf,
                                           multiBatch = TRUE,
                                           batchSize=500)
 # # Ver estado de carga
 # batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                                rforcecom.checkBatchStatus(session,
-#                                                           jobId=x$jobId,
-#                                                           batchId=x$id)
-#                          })
-# # Ver detalles de carga
-# batches_detail <- lapply(batches_info,
-#                          FUN=function(x){
-#                                rforcecom.getBatchDetails(session,
+#                               rforcecom.checkBatchStatus(session,
 #                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
+# status <- c()
+# for(i in 1:length(batches_status)) {
+#      status[i] <- batches_status[[i]]$state
+# }
+# status
+# # Ver detalles de carga
+# batches_detail <- lapply(batches_info,
+#                          FUN=function(x){
+#                               rforcecom.getBatchDetails(session,
+#                                                         jobId=x$jobId,
+#                                                         batchId=x$id)
+#                          })
 
 close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
-# 
-# ## Crear persons
-# 
-# ## Crear farmers
+
+## Crear persons
+
+# Descargar registros de contacts de nuevos asociados (es posible volerlo
+# más eficiente utilizando un solo query con condición IN?)
+for(i in 1:nrow(asoc.activos.nosf)) {
+     query <- paste("SELECT Id, gfsurveys__mobilesurveys_Id__c ",
+                    "FROM Contact WHERE gfsurveys__mobilesurveys_Id__c = ",
+                    paste("\'", 
+                          asoc.activos.nosf$gfsurveys__mobilesurveys_Id__c[i],
+                          "\'", sep = ""))
+     ifelse(i == 1,
+            contactos.nuevos <- rforcecom.query(session, query),
+            contactos.nuevos <- rbind(contactos.nuevos,
+                                      rforcecom.query(session, query)))
+}
+
+# Seleccionar datos a cargar en Person (incluido el campo de relación
+# a contact) - Mejora futura: cargar vereda, corregimiento y munic.
+vars.persons.cargar <- c("CEDASOCIAD", "SEXO", "DIRECCION", "TELEFONO")
+persons.cargar <- masociado.DBF[, vars.persons.cargar]
+# Renombrar categorías de género
+persons.cargar$SEXO <- ifelse(persons.cargar$SEXO == 1, "Masculino",
+                              ifelse(persons.cargar$SEXO == 2, "Femenino",
+                                     NA))
+# Eliminar ccs duplicadas
+persons.cargar = persons.cargar[!duplicated(persons.cargar$CEDASOCIAD),]
+# Variables de cédula tipo character
+persons.cargar$CEDASOCIAD <- as.character(persons.cargar$CEDASOCIAD)
+contactos.nuevos$gfsurveys__mobilesurveys_Id__c <- 
+     as.character(contactos.nuevos$gfsurveys__mobilesurveys_Id__c)
+# Agregar variables a cargar a lista de contactos cargados
+persons.cargar <- left_join(contactos.nuevos, persons.cargar,
+                            by = c("gfsurveys__mobilesurveys_Id__c" = 
+                                        "CEDASOCIAD"))
+persons.cargar <- select(persons.cargar, -gfsurveys__mobilesurveys_Id__c)
+# Cambiar nombres de variables por API names
+names(persons.cargar) <- c("gfmAg__Contact__c", "gfmAg__Gender__c",
+                           "gfmAg__address__c", "gfmAg__landline__c")
+
+# CARGAR PERSONS
+# Crear trabajo para cargar Persons
+job_info <- rforcecom.createBulkJob(session,
+                                    operation='insert',
+                                    object='gfmAg__Person__c')
+# Cargar datos
+batches_info <- rforcecom.createBulkBatch(session,
+                                          jobId=job_info$id,
+                                          persons.cargar,
+                                          multiBatch = TRUE,
+                                          batchSize=500)
+# # Ver estado de carga
+# batches_status <- lapply(batches_info,
+#                          FUN=function(x){
+#                               rforcecom.checkBatchStatus(session,
+#                                                          jobId=x$jobId,
+#                                                          batchId=x$id)
+#                          })
+# status <- c()
+# for(i in 1:length(batches_status)) {
+#      status[i] <- batches_status[[i]]$state
+# }
+# status
+# # Ver detalles de carga
+# batches_detail <- lapply(batches_info,
+#                          FUN=function(x){
+#                               rforcecom.getBatchDetails(session,
+#                                                         jobId=x$jobId,
+#                                                         batchId=x$id)
+#                          })
+
+close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 
+## Crear farmers
+## En contact hay algunos productores que no cargan porque ya están en
+## Salesforce como contactos por no ser farmers pero sí family members.
+## A estos contactos también se les debe crear un farmer.
+
+# Descargar persons creados (+id del contacto)
+for(i in 1:nrow(asoc.activos.nosf)) {
+     query <- paste("SELECT Id, gfmAg__Contact__r.gfsurveys__mobilesurveys_Id__c, ",
+                    "gfmAg__Contact__r.Id FROM gfmAg__Person__c WHERE " ,
+                    "gfmAg__Contact__r.gfsurveys__mobilesurveys_Id__c = ",
+                    paste("\'", 
+                          asoc.activos.nosf$gfsurveys__mobilesurveys_Id__c[i],
+                          "\'", sep = ""))
+     ifelse(i == 1,
+            persons.nuevos <- rforcecom.query(session, query),
+            persons.nuevos <- rbind(persons.nuevos,
+                                      rforcecom.query(session, query)))
+}
+
+# Cargar datos
+
+# Cambiar nombres
+farmers.cargar <- select(persons.nuevos, Id, Contact.Id)
+names(farmers.cargar) <- c("gfmAg__Person__c", "gfmAg__Contact__c")
+
+# Crear trabajo para cargar Persons
+job_info <- rforcecom.createBulkJob(session,
+                                    operation='insert',
+                                    object='gfmAg__Farmer__c')
+# Cargar datos
+batches_info <- rforcecom.createBulkBatch(session,
+                                          jobId=job_info$id,
+                                          farmers.cargar,
+                                          multiBatch = TRUE,
+                                          batchSize=500)
+# Ver estado de carga
+batches_status <- lapply(batches_info,
+                         FUN=function(x){
+                              rforcecom.checkBatchStatus(session,
+                                                         jobId=x$jobId,
+                                                         batchId=x$id)
+                         })
+status <- c()
+for(i in 1:length(batches_status)) {
+     status[i] <- batches_status[[i]]$state
+}
+status
+# Ver detalles de carga
+batches_detail <- lapply(batches_info,
+                         FUN=function(x){
+                              rforcecom.getBatchDetails(session,
+                                                        jobId=x$jobId,
+                                                        batchId=x$id)
+                         })
+
+close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 # 9. CARGAR CRÉDITO TOTAL -------------------------------------------------
 

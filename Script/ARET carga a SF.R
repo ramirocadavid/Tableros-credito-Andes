@@ -186,26 +186,68 @@ f.almacCafe <- left_join(f.almacCafe,
 # 3. MOVIMIENTO DETALLADO CAPITAL ASOCIADO --------------------------------
 
 # Seleccionar Variables iniciales
-vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "DESCPTMO",
-                     "CAPCAFE", "REVALORI", "KILCAFE")
+vars.movCapital <- c("CEDULA", "PERIODO", "CAPINGRE", "CAPANUAL", "SOLANUAL",
+                     "DESCPTMO", "CAPCAFE", "SOLCAFE", "REVALORI", "KILCAFE")
 movCapital <- daportes.DBF[, vars.movCapital]
 f.movCapital <- daportes.DBF[, vars.movCapital]
 
 # Seleccionar datos de maportes
 vars.maportes  <- c("PERIODO", "FECHA", "CAPITAL", "SOLIDARI")
-# Limpiar datos de maportes (solo un valor por año)
-maportes1 <- maportes.DBF[maportes.DBF$PERIODO <= 1993, ]
+# Seleccionar datos 71-93 y 95 de 1 de enero
+maportes.71a93_96 <- maportes.DBF[maportes.DBF$PERIODO <= 1996 &
+                                    grepl("*-01-01", maportes.DBF$FECHA), 
+                                  vars.maportes]
+# Retrasar el período un año (la cuota es al 31 de diciembre de cada año)
+maportes.71a93_96$PERIODO <- maportes.71a93_96$PERIODO - 1
+# Seleccionar datos de 1994 a 2017
+maportes.94a17 <- maportes.DBF[maportes.DBF$PERIODO >= 1994 & 
+                                    grepl("*-12-31", maportes.DBF$FECHA), 
+                               vars.maportes]
+# Eliminar duplicados de 2013 y 2015 (siempre dejar el mayor)
+maportes.94a17 <- maportes.94a17[order(maportes.94a17$PERIODO,
+                                       -maportes.94a17$CAPITAL), ]
+maportes.94a17 <- maportes.94a17[!duplicated(maportes.94a17$PERIODO), ]
 
-# 
-maportes <- maportes.dbf[grepl("12-31", maportes.dbf$FECHA), vars.maportes ]
+# Consolidar aportes
+aportes <- rbind(maportes.71a93_96, maportes.94a17)
 
-# f.movCapital <- left_join(daportes, maportes, by = "CEDULA" &/O "PERIODO"
-#                        &/O "Municipio????")
-# If (capital, solidari, capanual, solanual, capcafe, solcafe == NA, 0)
-# debe <- (f.movCapital$capital + f.movCapital$solidari) -
-#         (f.movCapital$capanual + f.movCapital$solanual
-#         +f.movCapital$capcafe + f.movCapital$solcafe)
-# f.movCapital <- data.frame(f.movCapital, debe)
+# Agregar cuota a f.movCapital
+f.movCapital <- left_join(f.movCapital,
+                          select(aportes, -FECHA), by = "PERIODO")
+# Remplazar valores en blanco por 0
+f.movCapital$CAPITAL <- ifelse(is.na(f.movCapital$CAPITAL),
+                               0, f.movCapital$CAPITAL)
+f.movCapital$SOLIDARI <- ifelse(is.na(f.movCapital$SOLIDARI),
+                               0, f.movCapital$SOLIDARI)
+f.movCapital$CAPANUAL <- ifelse(is.na(f.movCapital$CAPANUAL),
+                               0, f.movCapital$CAPANUAL)
+f.movCapital$SOLANUAL <- ifelse(is.na(f.movCapital$SOLANUAL),
+                               0, f.movCapital$SOLANUAL)
+f.movCapital$CAPCAFE <- ifelse(is.na(f.movCapital$CAPCAFE),
+                               0, f.movCapital$CAPCAFE)
+f.movCapital$SOLCAFE <- ifelse(is.na(f.movCapital$SOLCAFE),
+                               0, f.movCapital$SOLCAFE)
+# Calcular debe
+debe <- (f.movCapital$CAPITAL + f.movCapital$SOLIDARI) - 
+     (f.movCapital$CAPANUAL + f.movCapital$SOLANUAL + 
+           f.movCapital$CAPCAFE + f.movCapital$SOLCAFE)
+# Si debe es negativo, 0
+debe <- ifelse(debe < 0, 0, debe)
+# Agregar debe a f.movCapital
+f.movCapital <- data.frame(f.movCapital, debe)
+# Borrar debe si es de 1993, 1996 o año actual
+anio.actual <- as.numeric(substr(Sys.Date(), 1, 4))
+f.movCapital$debe <- ifelse(f.movCapital$PERIODO < 2000 |
+                                 f.movCapital$PERIODO == anio.actual, NA,
+                            f.movCapital$debe)
+# Calcular y agregar aportes
+f.movCapital <- data.frame(f.movCapital,
+                           aportes = rowSums(select(f.movCapital, CAPINGRE,
+                                                      CAPANUAL, DESCPTMO,
+                                                    CAPCAFE), 
+                                             na.rm = TRUE))
+
+
 # Validar con tres casos
 
 # ### Importar valores de las cuotas
@@ -562,7 +604,7 @@ f.totales <- data.frame(f.totales,
                                           na.rm = TRUE))
 
 ## Debe aportes
-debeAportes <- aggregate(x = select(f.movCapital, CAPANUAL),
+debeAportes <- aggregate(x = select(f.movCapital, debe),
                          by = select(f.movCapital, CEDULA),
                          FUN = sum, na.rm = TRUE)
 
@@ -570,15 +612,15 @@ f.totales <- full_join(f.totales, debeAportes, by = "CEDULA")
 
 ## Total deuda
 t.deuda <- rowSums(select(f.totales, cartera, intPend, intPendCast,
-                          costJud, costJudCast, almacen, CAPANUAL), na.rm = TRUE)
+                          costJud, costJudCast, almacen, debe), na.rm = TRUE)
 f.totales <- data.frame(f.totales, t.deuda)
 
 ## Disponible aportes
-t.aportes <- aggregate(x = select(f.movCapital, CAPCAFE), 
+t.aportes <- aggregate(x = select(f.movCapital, aportes), 
                        by = select(f.movCapital, CEDULA),
                        FUN = sum, na.rm = TRUE)
 
-t.aportes$CAPCAFE <- t.aportes$CAPCAFE * 5
+t.aportes$aportes <- t.aportes$aportes * 5
 names(t.aportes)[2] <- "disponibleAportes"
 
 f.totales <- full_join(f.totales, t.aportes, by = "CEDULA")
@@ -586,13 +628,15 @@ f.totales <- full_join(f.totales, t.aportes, by = "CEDULA")
 ## Disponible ingresos
 anio.actual <- as.integer(format(Sys.Date(), "%Y"))
 anio.anterior <- anio.actual - 1
+# Calcular valor total de cuota
+Vr..Cuota <- rowSums(select(aportes, CAPITAL, SOLIDARI), na.rm = TRUE)
+aportes <- data.frame(aportes, Vr..Cuota)
 
-cuota.asamblea <- read.csv("Cuota_Asamblea.csv")
-precios <- select(cuota.asamblea, Anio, Vr..Cuota)
+precios <- select(aportes, PERIODO, Vr..Cuota)
 #Convertir a Kgs
 precios$Vr..Cuota <- precios$Vr..Cuota / 12.5
-
-precio.anio.ant <- precios$Vr..Cuota[precios$Anio == anio.anterior]
+# Seleccionar precio año anterior
+precio.anio.ant <- precios$Vr..Cuota[precios$PERIODO == anio.anterior]
 
 movCapital.anio.ant <- f.movCapital[f.movCapital$PERIODO == anio.anterior, ]
 
@@ -608,7 +652,7 @@ f.totales <- full_join(f.totales,
 ## Saldo obligaciones actuales: suma de todos los créditos vigentes
 
 # Agregar saldos por cédula
-cred.vigentes <- f.RelCartAsoc[f.RelCartAsoc$tipo.credito == "Cartera vigente", ]
+cred.vigentes <- f.RelCartAsoc[f.RelCartAsoc$BORRADOLOG != 1, ]
 t_oblig.actuales <- aggregate(x = select(cred.vigentes, vr.actual),
                               by = select(cred.vigentes, CEDULA),
                               FUN = sum, na.rm = TRUE)
@@ -677,7 +721,7 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 # Suspender la ejecución del script por 5 minutos mientras se borran
 # registros existentes de créditos
-Sys.sleep(time = 60 * 5)
+Sys.sleep(time = 60 * 10)
 
 # 8. CREAR PRODUCTORES NUEVOS EN SALESFORCE -------------------------------
 
@@ -897,6 +941,7 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 # Descargar farmers de Salesforce (cédula y id)
 fields <- c("Id", "Documento_identidad__c")
 productores.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c", fields)
+productores.sf <- productores.sf[!duplicated(productores.sf$Documento_identidad__c),]
 
 # Agregar ID de Salesforce a f.totales
 f.totales$CEDULA <- as.factor(f.totales$CEDULA)
@@ -910,9 +955,9 @@ f.totales <- inner_join(f.totales, productores.sf,
 # Limpiar y renombrar variables f.totales por API names
 
 f.totales <- select(f.totales, -one_of("car.vencida", "car.vigente", "cartera",
-                                        "intPend", "intPendCast", "costJud", 
-                                        "costJudCast", "t.deuda", "CAPANUAL",
-                                        "revalori", "capital"))
+                                       "intPend", "intPendCast", "costJud", 
+                                       "costJudCast", "t.deuda", "revalori",
+                                       "debe"))
 
 names(f.totales) <- c("Cedula__c", "Almacen_vencido__c", "Almacen_vigente__c",
                       "Total_almacen__c",
@@ -920,7 +965,8 @@ names(f.totales) <- c("Cedula__c", "Almacen_vencido__c", "Almacen_vigente__c",
                       "Disponible_ingresos__c", 
                       "Saldo_obligaciones_actuales__c", 
                       "Disponible_actual_por_aportes__c",
-                      "Disponible_actual_por_ingresos__c", "Farmer__c")
+                      "Disponible_actual_por_ingresos__c", "Total_Capital__c",
+                      "Farmer__c")
 
 f.totales <- f.totales[order(f.totales$Farmer__c), ]
 
@@ -1099,11 +1145,14 @@ f.movCapital$CEDULA <- as.factor(f.movCapital$CEDULA)
 f.movCapital <- inner_join(f.movCapital, credito.total,
                           by = c("CEDULA" = "Cedula__c"))
 
-f.movCapital <- select(f.movCapital, -one_of(c("CEDULA")))
+f.movCapital <- select(f.movCapital, -one_of(c("CEDULA", "SOLANUAL", 
+                                               "SOLCAFE", "CAPITAL",
+                                               "SOLIDARI", "aportes",
+                                               "CAPANUAL")))
 
-names(f.movCapital) <- c("PERIODO__c", "CAPINGRESO__c", "CAPANUAL__c",
-                         "DESCPTMO__c", "CAPCAFE__c", "REVALORI__c",
-                         "KILCAFE__c", "credito_Total__c")
+names(f.movCapital) <- c("PERIODO__c", "CAPINGRESO__c", "DESCPTMO__c",
+                         "CAPCAFE__c", "REVALORI__c", "KILCAFE__c",
+                         "CAPANUAL__c", "credito_Total__c")
 
 f.movCapital <- f.movCapital[order(f.movCapital$credito_Total__c), ]
 
@@ -1119,13 +1168,13 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# batches_status <- lapply(batches_info, 
+# batches_status <- lapply(batches_info,
 #                          FUN=function(x){
-#                               rforcecom.checkBatchStatus(session, 
-#                                                          jobId=x$jobId, 
+#                               rforcecom.checkBatchStatus(session,
+#                                                          jobId=x$jobId,
 #                                                          batchId=x$id)
 #                          })
-# 
+# batches_status[[1]]$state 
 # batches_detail <- lapply(batches_info, 
 #                          FUN=function(x){
 #                               rforcecom.getBatchDetails(session, 
@@ -1165,13 +1214,13 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# batches_status <- lapply(batches_info, 
-#                          FUN=function(x){
-#                               rforcecom.checkBatchStatus(session, 
-#                                                          jobId=x$jobId, 
-#                                                          batchId=x$id)
-#                          })
-# 
+batches_status <- lapply(batches_info,
+                         FUN=function(x){
+                              rforcecom.checkBatchStatus(session,
+                                                         jobId=x$jobId,
+                                                         batchId=x$id)
+                         })
+batches_status[[1]]$state
 # batches_detail <- lapply(batches_info, 
 #                          FUN=function(x){
 #                               rforcecom.getBatchDetails(session, 
@@ -1184,13 +1233,13 @@ close_job_info <- rforcecom.closeBulkJob(session, jobId=job_info$id)
 
 
 # 15. PRUEBA DE EJECUCIÓN -------------------------------------------------
-
-setwd("C:/Users/Ramiro/Desktop/Prueba scheduleR")
-prueba <- as.vector(read.csv("prueba_scheduleR.csv")[, 1])
-
-prueba[length(prueba) + 1] <- as.character(Sys.time())
-
-write.csv(prueba, "prueba_scheduleR.csv", row.names = FALSE)
-
-# Cargar objetos importados (.dbf) guardados para pruebas
-load("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/LAC/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Tableros-credito-Andes/Datos/29 agosto 2017/data.RData")
+# 
+# setwd("C:/Users/Ramiro/Desktop/Prueba scheduleR")
+# prueba <- as.vector(read.csv("prueba_scheduleR.csv")[, 1])
+# 
+# prueba[length(prueba) + 1] <- as.character(Sys.time())
+# 
+# write.csv(prueba, "prueba_scheduleR.csv", row.names = FALSE)
+# 
+# # Cargar objetos importados (.dbf) guardados para pruebas
+# load("C:/Users/Ramiro/rcadavid@grameenfoundation.org/7. Proyectos/Activos/LAC/DelosAndes Cooperativa/Diseno de herramientas/03. ARET/DBF a Salesforce/Tableros-credito-Andes/Datos/29 agosto 2017/data.RData")

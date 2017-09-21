@@ -29,10 +29,13 @@ ccs <- c(3417689, 98630518, 3419167, 21461147) #pantallazos 1
 ccs <- c(21551811, 15526081, 21463508) #pantallazos 2
 ccs <- c(10195996, 15526383) #?
 ccs <- c(15522272, 15525500, 571227) #pantallazos 3
+ccs <- c(3417689, 98630518, 3419167, 21461147, 21551811, 15526081, 21463508,
+         10195996, 15526383, 15522272, 15525500, 571227, 1007026, 43284018,
+         15530748, 3374770) #pantallazos 4
 
 # Cédula a probar
 cc <- ccs[1]
-
+cc <- 15530748
 
 # PRUEBAS -----------------------------------------------------------------
 
@@ -79,7 +82,7 @@ View(factalma.DBF[factalma.DBF$CEDULA == cc, ])
 
 # MOVIMIENTO DE CAPITAL
 
-f.movCapital[f.movCapital$CEDULA == cc,]
+View(f.movCapital[f.movCapital$CEDULA == cc,])
 f.movCapital[f.movCapital$CEDULA == cc, c("CEDULA", "PERIODO", "CAPCAFE",
                                           "KILCAFE")]
 View(daportes.DBF[daportes.DBF$CEDULA == cc, ])

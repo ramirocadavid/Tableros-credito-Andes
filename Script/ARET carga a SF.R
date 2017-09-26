@@ -945,8 +945,8 @@ productores.sf <- productores.sf[!duplicated(productores.sf$Documento_identidad_
 
 # Agregar ID de Salesforce a f.totales
 f.totales$CEDULA <- as.factor(f.totales$CEDULA)
-f.totales <- inner_join(f.totales, productores.sf,
-                       by = c("CEDULA" = "Documento_identidad__c"))
+f.totales <- inner_join(productores.sf, f.totales,
+                       by = c("Documento_identidad__c" = "CEDULA"))
 
 
 # Descripción objeto
@@ -959,16 +959,15 @@ f.totales <- select(f.totales, -one_of("car.vencida", "car.vigente", "cartera",
                                        "costJudCast", "t.deuda", "revalori",
                                        "debe"))
 
-names(f.totales) <- c("Cedula__c", "Almacen_vencido__c", "Almacen_vigente__c",
-                      "Total_almacen__c",
-                      "Disponible_aportes__c",
-                      "Disponible_ingresos__c", 
+names(f.totales) <- c("Farmer__c", "Cedula__c", "Almacen_vencido__c",
+                      "Almacen_vigente__c", "Total_almacen__c",
+                      "Disponible_aportes__c", "Disponible_ingresos__c", 
                       "Saldo_obligaciones_actuales__c", 
                       "Disponible_actual_por_aportes__c",
-                      "Disponible_actual_por_ingresos__c", "Total_Capital__c",
-                      "Farmer__c")
+                      "Disponible_actual_por_ingresos__c", "Total_Capital__c")
 
 f.totales <- f.totales[order(f.totales$Farmer__c), ]
+f.totales <- f.totales[!duplicated(f.totales$Cedula__c), ]
 
 # run an insert job into the Account object
 job_info <- rforcecom.createBulkJob(session, 
@@ -982,7 +981,7 @@ batches_info <- rforcecom.createBulkBatch(session,
                                           multiBatch = TRUE, 
                                           batchSize=500)
 
-# check on status of each batch
+# # check on status of each batch
 # batches_status <- lapply(batches_info,
 #                          FUN=function(x){
 #                               rforcecom.checkBatchStatus(session,

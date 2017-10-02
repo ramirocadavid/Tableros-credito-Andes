@@ -528,7 +528,7 @@ f.totales <- full_join(f.totales, t.costJudCast, by = "CEDULA")
 ## Crear vector con todas las cédulas de f.totales y de SF
 library(RForcecom)
 username <- "admin@andes.org"
-password <- "admgf2017#XQWRiDpPU6NzJC9Cmm185FF2"
+password <- "gfadm913XQWRiDpPU6NzJC9Cmm185FF2"
 session <- rforcecom.login(username, password)
 
 cc.sf <- rforcecom.retrieve(session, "gfmAg__Farmer__c",
@@ -698,7 +698,7 @@ f.totales <- full_join(f.totales, t.capital, by = "CEDULA")
 
 library(RForcecom)
 username <- "admin@andes.org"
-password <- "admgf2017#XQWRiDpPU6NzJC9Cmm185FF2"
+password <- "gfadm913XQWRiDpPU6NzJC9Cmm185FF2"
 instanceURL <- "https://taroworks-8629.cloudforce.com/"
 apiVersion <- "36.0"
 session <- rforcecom.login(username, password, instanceURL, apiVersion)

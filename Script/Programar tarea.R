@@ -1,18 +1,11 @@
 library(taskscheduleR)
 
-setwd("../Script")
+# Prueba
+taskscheduler_create(rscript = "C:/Creditos-Salesforce/Test-R-scheduler/prueba_scheduleR.R",
+                     schedule = "DAILY", days = "*", starttime = "16:43",
+                     startdate = format(Sys.Date(), "%d/%m/%Y"), debug = TRUE)
 
-myscript <- system.file("extdata", "ARET carga a SF.R", package = "taskscheduleR")
-
-## run script once within 62 seconds
-taskscheduler_create(taskname = "DBFaSF", rscript = myscript, 
-                     schedule = "MINUTE", starttime = format(Sys.time() + 62, "%H:%M"))
-
-
-# Shiny
-install.packages("data.table")
-install.packages("knitr")
-install.packages("miniUI")
-install.packages("shiny")
-install.packages("taskscheduleR", repos = "http://www.datatailor.be/rcube",
-                 type = "source")
+# Tablero de créditos
+taskscheduler_create(rscript = "C:/Creditos-Salesforce/ARET-carga-a-SF.R",
+                     schedule = "DAILY", days = "*", starttime = "02:00",
+                     startdate = format(Sys.Date(), "%d/%m/%Y"), debug = TRUE)
